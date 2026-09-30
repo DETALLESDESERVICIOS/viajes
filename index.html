@@ -155,10 +155,10 @@
 					<div class="section-head"><span class="step">1</span><div><h2>Unidad y operador</h2><p class="section-note" id="vehicleStatus">Conectando con el catálogo de unidades...</p></div></div>
 					<div class="fields">
 						<div class="field"><label for="economic">ECONOMICO <span class="hint">selecciona un registro</span></label><input id="economic" type="text" list="vehicleOptions" placeholder="Buscar económico" autocomplete="off" required><datalist id="vehicleOptions"></datalist></div>
-						<div class="field"><label for="vehicleName">UNIDAD</label><input id="vehicleName" type="text" readonly required></div>
-						<div class="field full"><label for="operator">ASIGNADO A</label><input id="operator" type="text" readonly required></div>
-						<div class="field"><label for="phone">Celular WhatsApp <span class="hint">con clave de país</span></label><input id="phone" type="tel" inputmode="tel" placeholder="Ej. 525512345678" required></div>
-						<div class="field"><label for="date">Fecha de servicio</label><input id="date" type="date" required></div>
+						<div class="field"><label for="vehicleName">UNIDAD</label><input id="vehicleName" type="text" readonly></div>
+						<div class="field full"><label for="operator">ASIGNADO A</label><input id="operator" type="text" readonly></div>
+						<div class="field"><label for="phone">Celular WhatsApp <span class="hint">opcional, con clave de país</span></label><input id="phone" type="tel" inputmode="tel" placeholder="Ej. 525512345678"></div>
+						<div class="field"><label for="date">Fecha de servicio</label><input id="date" type="date"></div>
 					</div>
 				</section>
 
@@ -167,7 +167,7 @@
 				<section>
 					<div class="section-head"><span class="step">2</span><div><h2>Base de salida</h2><p class="section-note">Usa latitud y longitud decimal de Google Maps</p></div></div>
 					<div class="fields">
-						<div class="field full"><label for="baseName">Nombre de la base</label><input id="baseName" type="text" value="Centro de Apan, Hidalgo (referencia)" required></div>
+						<div class="field full"><label for="baseName">Nombre de la base</label><input id="baseName" type="text" value="Centro de Apan, Hidalgo (referencia)"></div>
 						<div class="field full"><label for="baseCoordinates">Coordenadas fijas de la base</label><input id="baseCoordinates" type="text" value="19.7099, -98.4526" readonly required></div>
 					</div>
 				</section>
@@ -215,7 +215,7 @@
 	<template id="stopTemplate">
 		<div class="stop-row">
 			<span class="stop-index"></span>
-			<div class="field"><label>Cliente / destino</label><input class="stop-name" type="text" placeholder="Nombre del cliente" required></div>
+			<div class="field"><label>Cliente / destino</label><input class="stop-name" type="text" placeholder="Nombre del cliente (opcional)"></div>
 			<div class="field stop-coordinate-field"><label>Coordenadas <span class="hint">latitud, longitud</span></label><input class="stop-coordinates" type="text" placeholder="Pega las coordenadas del cliente" required></div>
 			<div class="stop-actions">
 				<button class="pick-stop" type="button" aria-label="Elegir ubicación del cliente en el mapa" title="Elegir ubicación en el mapa">⌖</button>
@@ -381,8 +381,7 @@
 			}];
 			for (const [index, row] of [...stopsContainer.querySelectorAll('.stop-row')].entries()) {
 				const name = row.querySelector('.stop-name').value.trim();
-				if (!name) throw new Error(`Escribe el nombre del cliente ${index + 1}.`);
-				points.push({ name, ...parseCoordinates(row.querySelector('.stop-coordinates').value, name) });
+				points.push({ name: name || `Destino ${index + 1}`, ...parseCoordinates(row.querySelector('.stop-coordinates').value, `el destino ${index + 1}`) });
 			}
 			if (points.length < 2) throw new Error('Agrega al menos un cliente para calcular el recorrido.');
 			if ($('#returnBase').checked) points.push({ ...points[0], name: `${points[0].name} (regreso)` });
@@ -496,12 +495,16 @@
 			const operator = $('#operator').value.trim();
 			const economic = $('#economic').value.trim();
 			const vehicleName = $('#vehicleName').value.trim();
-			const date = formatDate($('#date').value);
+			const date = formatDate($('#date').value || localDateValue(new Date()));
 			const customerList = points.slice(1, $('#returnBase').checked ? -1 : undefined).map((point) => point.name).join(', ');
-			const message = `Hola, ${operator}. Para hoy, ${date}, la unidad ${economic} (${vehicleName}) tiene asignada la ruta: ${customerList}. Debes cargar aproximadamente ${totalLiters.toFixed(1)} litros de combustible. Por favor, confirma cuando hayas cargado.`;
+			const greeting = operator ? `Hola, ${operator}.` : 'Hola.';
+			const vehicleDescription = vehicleName ? ` (${vehicleName})` : '';
+			const message = `${greeting} Para hoy, ${date}, la unidad ${economic}${vehicleDescription} tiene asignada la ruta: ${customerList}. Debes cargar aproximadamente ${totalLiters.toFixed(1)} litros de combustible. Por favor, confirma cuando hayas cargado.`;
 			$('#messagePreview').textContent = message;
 			const phone = $('#phone').value.replace(/\D/g, '');
-			$('#whatsappLink').href = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+			const whatsappLink = $('#whatsappLink');
+			whatsappLink.href = phone.length >= 10 ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}` : '#';
+			whatsappLink.style.display = phone.length >= 10 ? 'flex' : 'none';
 			const mapsPoints = points.map(({ lat, lon }) => `${lat},${lon}`);
 			const mapsUrl = new URL('https://www.google.com/maps/dir/');
 			mapsUrl.searchParams.set('api', '1');
@@ -520,11 +523,6 @@
 			event.preventDefault();
 			formError.style.display = 'none';
 			if (!form.reportValidity()) return;
-			const phone = $('#phone').value.replace(/\D/g, '');
-			if (phone.length < 10) {
-				showError('Escribe el celular con clave de país, por ejemplo: 52 seguido del número.');
-				return;
-			}
 			const efficiency = Number($('#efficiency').value);
 			if (!Number.isFinite(efficiency) || efficiency <= 0) {
 				showError('Indica el rendimiento en vacío de la unidad en km por litro.');
