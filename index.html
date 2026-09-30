@@ -179,9 +179,9 @@
 				<hr class="divider">
 
 				<section>
-					<div class="section-head"><span class="step">4</span><div><h2>Rendimiento y reserva</h2><p class="section-note">El rendimiento se carga desde el catálogo de unidades</p></div></div>
+					<div class="section-head"><span class="step">4</span><div><h2>Rendimiento y reserva</h2><p class="section-note">La ida agrega 30% de combustible; el regreso usa el rendimiento normal</p></div></div>
 					<div class="fields">
-						<div class="field"><label for="efficiency">RENDIMIENTO <span class="hint">km por litro</span></label><input id="efficiency" type="number" min="0.1" step="any" placeholder="Se carga al elegir unidad" required></div>
+						<div class="field"><label for="efficiency">RENDIMIENTO <span class="hint">km/L en vacío</span></label><input id="efficiency" type="number" min="0.1" step="any" placeholder="Se carga al elegir unidad" required></div>
 						<div class="field"><label for="reserve">Reserva adicional <span class="hint">por ciento</span></label><input id="reserve" type="number" min="0" max="100" step="1" value="10" required></div>
 					</div>
 				</section>
@@ -202,7 +202,7 @@
 					<div class="message-preview" id="messagePreview"></div>
 					<a class="whatsapp-button" id="whatsappLink" href="#" target="_blank" rel="noopener">Abrir mensaje en WhatsApp</a>
 					<a class="text-button" id="mapsLink" href="#" target="_blank" rel="noopener" style="display:block;text-align:center;margin-top:7px">Ver recorrido en Google Maps</a>
-					<p class="disclaimer">El cálculo es una estimación por ruta. Confirma el recorrido real, las condiciones de carga y el rendimiento antes de autorizar el abastecimiento.</p>
+					<p class="disclaimer">La ida calcula 30% más litros que el rendimiento en vacío; el regreso a Apan usa el rendimiento normal. La reserva adicional se aplica al total; confirma el consumo real antes de autorizar el abastecimiento.</p>
 				</div>
 			</aside>
 		</div>
@@ -264,7 +264,7 @@
 					}))
 					.map((record) => ({
 						...record,
-						label: `${record.economic} | ${record.unit} | ${record.assignedTo} | ${record.efficiency || 'sin rendimiento'}`
+						label: `${record.economic} | ${record.unit} | ${record.assignedTo} | ${record.efficiency || 'sin rendimiento'} km/L vacío`
 					}));
 				$('#vehicleOptions').replaceChildren(...vehicleRecords.map((record) => {
 					const option = document.createElement('option');
@@ -290,8 +290,8 @@
 				const efficiency = Number(record.efficiency);
 				$('#efficiency').value = Number.isFinite(efficiency) && efficiency > 0 ? efficiency : '';
 				$('#vehicleStatus').textContent = $('#efficiency').value
-					? 'Unidad y rendimiento cargados desde el catálogo.'
-					: 'El catálogo aún no incluye RENDIMIENTO para esta unidad; captura los km/L manualmente.';
+					? 'Rendimiento en vacío cargado. La ida suma 30% de combustible.'
+					: 'El catálogo aún no incluye RENDIMIENTO; captura los km/L en vacío.';
 				return;
 			}
 			$('#vehicleName').value = '';
@@ -442,7 +442,7 @@
 			return `${day} de ${monthNames[month - 1]} de ${year}`;
 		}
 
-		function renderResult(points, route, distanceKm, baseLiters, totalLiters, reservePercent) {
+		function renderResult(points, route, legFuel, distanceKm, baseLiters, totalLiters, reservePercent) {
 			drawRoute(route);
 			$('#emptyState').style.display = 'none';
 			const summary = $('#summary');
@@ -454,9 +454,9 @@
 				const row = document.createElement('div');
 				row.className = 'leg';
 				const label = document.createElement('span');
-				label.textContent = `${points[index].name} → ${points[index + 1].name}`;
+				label.textContent = `${points[index].name} → ${points[index + 1].name} (${legFuel[index].mode})`;
 				const distance = document.createElement('strong');
-				distance.textContent = `${(leg.distance / 1000).toFixed(1)} km`;
+				distance.textContent = `${legFuel[index].distanceKm.toFixed(1)} km | ${legFuel[index].liters.toFixed(1)} L`;
 				row.append(label, distance);
 				return row;
 			}));
@@ -496,7 +496,7 @@
 			const efficiency = Number($('#efficiency').value);
 			const reservePercent = Number($('#reserve').value);
 			if (!Number.isFinite(efficiency) || efficiency <= 0) {
-				showError('El rendimiento debe ser mayor que cero y estar expresado en km por litro.');
+				showError('Indica el rendimiento en vacío de la unidad en km por litro.');
 				return;
 			}
 			if (!Number.isFinite(reservePercent) || reservePercent < 0 || reservePercent > 100) {
@@ -512,9 +512,18 @@
 				const points = readPoints();
 				const route = await fetchRoute(points);
 				const distanceKm = route.distance / 1000;
-				const baseLiters = distanceKm / efficiency;
+				const legFuel = route.legs.map((leg, index) => {
+					const isEmptyReturn = $('#returnBase').checked && index === route.legs.length - 1;
+					const legDistanceKm = leg.distance / 1000;
+					return {
+						mode: isEmptyReturn ? 'vacío' : 'ida +30%',
+						distanceKm: legDistanceKm,
+						liters: (legDistanceKm / efficiency) * (isEmptyReturn ? 1 : 1.3)
+					};
+				});
+				const baseLiters = legFuel.reduce((total, leg) => total + leg.liters, 0);
 				const totalLiters = baseLiters * (1 + reservePercent / 100);
-				renderResult(points, route, distanceKm, baseLiters, totalLiters, reservePercent);
+				renderResult(points, route, legFuel, distanceKm, baseLiters, totalLiters, reservePercent);
 				$('#statusText').textContent = 'Recorrido calculado';
 				$('#statusDot').style.background = '#218b58';
 			} catch (error) {
