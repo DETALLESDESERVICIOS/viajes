@@ -48,8 +48,14 @@
 		.section-note { font-size: 12px; color: var(--muted); margin: 3px 0 0; }
 		.divider { border: 0; border-top: 1px solid var(--line); margin: 22px 0; }
 		.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-		.field { min-width: 0; }
+		.field { min-width: 0; position: relative; }
 		.field.full { grid-column: 1 / -1; }
+		.place-suggestions { position: absolute; top: calc(100% + 2px); left: 0; right: 0; z-index: 1000; display: grid; max-height: 220px; overflow-y: auto; background: white; border: 1px solid var(--line); border-radius: 5px; box-shadow: var(--shadow); }
+		.place-suggestions:empty { display: none; }
+		.place-suggestion { width: 100%; padding: 9px 11px; border: 0; border-bottom: 1px solid var(--line); background: white; color: var(--ink); text-align: left; font-size: 12px; line-height: 1.4; }
+		.place-suggestion:last-child { border-bottom: 0; }
+		.place-suggestion:hover, .place-suggestion:focus { background: var(--green-soft); outline: none; }
+		.place-search-message { padding: 9px 11px; color: var(--muted); font-size: 11px; }
 		label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 6px; }
 		.hint { color: var(--muted); font-size: 11px; font-weight: 400; }
 		input[type="text"], input[type="tel"], input[type="number"], input[type="date"] { width: 100%; min-height: 42px; border: 1px solid #cfd7d0; border-radius: 5px; padding: 9px 11px; color: var(--ink); background: #fff; outline: none; }
@@ -215,7 +221,7 @@
 	<template id="stopTemplate">
 		<div class="stop-row">
 			<span class="stop-index"></span>
-			<div class="field"><label>Cliente / destino</label><input class="stop-name" type="text" placeholder="Nombre del cliente (opcional)"></div>
+			<div class="field"><label>Cliente / destino</label><input class="stop-name" type="text" placeholder="Busca ciudad, colonia o dirección" autocomplete="off"><div class="place-suggestions" role="listbox" aria-label="Lugares sugeridos"></div></div>
 			<div class="field stop-coordinate-field"><label>Coordenadas <span class="hint">latitud, longitud</span></label><input class="stop-coordinates" type="text" placeholder="Pega las coordenadas del cliente" required></div>
 			<div class="stop-actions">
 				<button class="pick-stop" type="button" aria-label="Elegir ubicación del cliente en el mapa" title="Elegir ubicación en el mapa">⌖</button>
@@ -308,7 +314,32 @@
 		function addStop(name = '') {
 			const fragment = $('#stopTemplate').content.cloneNode(true);
 			const row = fragment.querySelector('.stop-row');
-			row.querySelector('.stop-name').value = name;
+			const nameInput = row.querySelector('.stop-name');
+			let placeSearchTimer;
+			nameInput.value = name;
+			row.dataset.placeSearchRequest = '0';
+			nameInput.addEventListener('input', () => {
+				const query = nameInput.value.trim();
+				const requestId = Number(row.dataset.placeSearchRequest) + 1;
+				row.dataset.placeSearchRequest = String(requestId);
+				clearTimeout(placeSearchTimer);
+				row.querySelector('.stop-coordinates').value = '';
+				const suggestions = row.querySelector('.place-suggestions');
+				if (mapPickTarget?.row === row) {
+					mapPickTarget = null;
+					routeMap?.getContainer().classList.remove('map-picking');
+					row.classList.remove('map-pick-active');
+				}
+				if (query.length < 3) {
+					suggestions.replaceChildren();
+					return;
+				}
+				const message = document.createElement('span');
+				message.className = 'place-search-message';
+				message.textContent = 'Buscando lugares...';
+				suggestions.replaceChildren(message);
+				placeSearchTimer = setTimeout(() => searchPlaces(row, query, requestId), 350);
+			});
 			row.querySelector('.pick-stop').addEventListener('click', () => {
 				if (!routeMap) {
 					$('#mapStatus').textContent = 'El mapa todavía no está disponible.';
@@ -372,6 +403,65 @@
 			if (!Number.isFinite(lat) || lat < -90 || lat > 90) throw new Error(`La latitud de ${label} no es válida.`);
 			if (!Number.isFinite(lon) || lon < -180 || lon > 180) throw new Error(`La longitud de ${label} no es válida.`);
 			return { lat, lon };
+		}
+
+		function formatPlaceLabel(properties) {
+			const parts = [properties.name, properties.street, properties.housenumber, properties.district, properties.city, properties.county, properties.state, properties.country]
+				.filter(Boolean)
+				.map((part) => String(part).trim());
+			return [...new Set(parts)].join(', ') || 'Ubicación seleccionada';
+		}
+
+		async function searchPlaces(row, query, requestId) {
+			const suggestions = row.querySelector('.place-suggestions');
+			const nameInput = row.querySelector('.stop-name');
+			try {
+				const url = new URL('https://photon.komoot.io/api/');
+				url.searchParams.set('q', `${query}, México`);
+				url.searchParams.set('limit', '5');
+				url.searchParams.set('lat', '19.7099');
+				url.searchParams.set('lon', '-98.4526');
+				const response = await fetch(url);
+				if (!response.ok) throw new Error('No se pudieron buscar lugares.');
+				const data = await response.json();
+				if (requestId !== Number(row.dataset.placeSearchRequest) || query !== nameInput.value.trim()) return;
+				const buttons = (data.features || [])
+					.filter((feature) => feature.geometry?.coordinates?.length === 2)
+					.map((feature) => {
+						const [longitude, latitude] = feature.geometry.coordinates;
+						const button = document.createElement('button');
+						button.className = 'place-suggestion';
+						button.type = 'button';
+						button.setAttribute('role', 'option');
+						button.textContent = formatPlaceLabel(feature.properties || {});
+						button.addEventListener('click', () => {
+							nameInput.value = button.textContent;
+							row.querySelector('.stop-coordinates').value = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+							suggestions.replaceChildren();
+							if (mapPickTarget) {
+								mapPickTarget.row.classList.remove('map-pick-active');
+								mapPickTarget = null;
+								routeMap?.getContainer().classList.remove('map-picking');
+							}
+							row.querySelector('.stop-coordinates').dispatchEvent(new Event('input', { bubbles: true }));
+							$('#mapStatus').textContent = `Ubicación guardada para ${nameInput.value}.`;
+						});
+						return button;
+					});
+				if (buttons.length) suggestions.replaceChildren(...buttons);
+				else {
+					const message = document.createElement('span');
+					message.className = 'place-search-message';
+					message.textContent = 'No se encontraron lugares. Prueba otra búsqueda o selecciónalo en el mapa.';
+					suggestions.replaceChildren(message);
+				}
+			} catch {
+				if (requestId !== Number(row.dataset.placeSearchRequest)) return;
+				const message = document.createElement('span');
+				message.className = 'place-search-message';
+				message.textContent = 'No se pudo buscar. Puedes elegir el punto directamente en el mapa.';
+				suggestions.replaceChildren(message);
+			}
 		}
 
 		function readPoints() {
