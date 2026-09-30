@@ -179,10 +179,9 @@
 				<hr class="divider">
 
 				<section>
-					<div class="section-head"><span class="step">4</span><div><h2>Rendimiento y reserva</h2><p class="section-note">La ida agrega 30% de combustible; el regreso usa el rendimiento normal</p></div></div>
+					<div class="section-head"><span class="step">4</span><div><h2>Rendimiento</h2><p class="section-note">La ida agrega 30% de combustible; el regreso usa el rendimiento normal</p></div></div>
 					<div class="fields">
 						<div class="field"><label for="efficiency">RENDIMIENTO <span class="hint">km/L en vacío</span></label><input id="efficiency" type="number" min="0.1" step="any" placeholder="Se carga al elegir unidad" required></div>
-						<div class="field"><label for="reserve">Reserva adicional <span class="hint">por ciento</span></label><input id="reserve" type="number" min="0" max="100" step="1" value="10" required></div>
 					</div>
 				</section>
 
@@ -196,13 +195,13 @@
 				<div id="routeMap" role="img" aria-label="Mapa con la base y los destinos del recorrido"></div>
 				<div class="empty-state" id="emptyState"><span class="empty-symbol">↗</span><strong>Listo para calcular</strong><p>Completa las coordenadas y el orden de las entregas para obtener la distancia por carretera.</p></div>
 				<div class="summary" id="summary">
-					<div class="fuel-highlight"><span>Combustible sugerido, incluida reserva</span><strong id="fuelTotal">-- <small>L</small></strong></div>
+					<div class="fuel-highlight"><span>Combustible estimado del recorrido</span><strong id="fuelTotal">-- <small>L</small></strong></div>
 					<div class="metrics"><div class="metric"><span>Distancia por carretera</span><strong id="distanceTotal">-- km</strong></div><div class="metric"><span>Consumo estimado</span><strong id="fuelBase">-- L</strong></div></div>
 					<div class="route-legs"><h3>Tramos calculados</h3><div id="legsList"></div></div>
 					<div class="message-preview" id="messagePreview"></div>
 					<a class="whatsapp-button" id="whatsappLink" href="#" target="_blank" rel="noopener">Abrir mensaje en WhatsApp</a>
 					<a class="text-button" id="mapsLink" href="#" target="_blank" rel="noopener" style="display:block;text-align:center;margin-top:7px">Ver recorrido en Google Maps</a>
-					<p class="disclaimer">La ida calcula 30% más litros que el rendimiento en vacío; el regreso a Apan usa el rendimiento normal. La reserva adicional se aplica al total; confirma el consumo real antes de autorizar el abastecimiento.</p>
+					<p class="disclaimer">La ida calcula 30% más litros que el rendimiento en vacío; el regreso a Apan usa el rendimiento normal. Confirma el consumo real antes de autorizar el abastecimiento.</p>
 				</div>
 			</aside>
 		</div>
@@ -442,7 +441,7 @@
 			return `${day} de ${monthNames[month - 1]} de ${year}`;
 		}
 
-		function renderResult(points, route, legFuel, distanceKm, baseLiters, totalLiters, reservePercent) {
+		function renderResult(points, route, legFuel, distanceKm, baseLiters, totalLiters) {
 			drawRoute(route);
 			$('#emptyState').style.display = 'none';
 			const summary = $('#summary');
@@ -466,7 +465,7 @@
 			const vehicleName = $('#vehicleName').value.trim();
 			const date = formatDate($('#date').value);
 			const customerList = points.slice(1, $('#returnBase').checked ? -1 : undefined).map((point) => point.name).join(', ');
-			const message = `Hola, ${operator}. Para hoy, ${date}, la unidad ${economic} (${vehicleName}) tiene asignada la ruta: ${customerList}. Debes cargar aproximadamente ${totalLiters.toFixed(1)} litros de combustible (incluye ${reservePercent}% de reserva). Por favor, confirma cuando hayas cargado.`;
+			const message = `Hola, ${operator}. Para hoy, ${date}, la unidad ${economic} (${vehicleName}) tiene asignada la ruta: ${customerList}. Debes cargar aproximadamente ${totalLiters.toFixed(1)} litros de combustible. Por favor, confirma cuando hayas cargado.`;
 			$('#messagePreview').textContent = message;
 			const phone = $('#phone').value.replace(/\D/g, '');
 			$('#whatsappLink').href = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
@@ -494,13 +493,8 @@
 				return;
 			}
 			const efficiency = Number($('#efficiency').value);
-			const reservePercent = Number($('#reserve').value);
 			if (!Number.isFinite(efficiency) || efficiency <= 0) {
 				showError('Indica el rendimiento en vacío de la unidad en km por litro.');
-				return;
-			}
-			if (!Number.isFinite(reservePercent) || reservePercent < 0 || reservePercent > 100) {
-				showError('La reserva debe ser un porcentaje entre 0 y 100.');
 				return;
 			}
 
@@ -522,8 +516,8 @@
 					};
 				});
 				const baseLiters = legFuel.reduce((total, leg) => total + leg.liters, 0);
-				const totalLiters = baseLiters * (1 + reservePercent / 100);
-				renderResult(points, route, legFuel, distanceKm, baseLiters, totalLiters, reservePercent);
+				const totalLiters = baseLiters;
+				renderResult(points, route, legFuel, distanceKm, baseLiters, totalLiters);
 				$('#statusText').textContent = 'Recorrido calculado';
 				$('#statusDot').style.background = '#218b58';
 			} catch (error) {
