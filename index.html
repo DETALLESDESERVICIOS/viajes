@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="es">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="theme-color" content="#f5f6f2">
+	<title>Combustible diario | Tres Siglos</title>
+	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+	<style>
+		:root {
+			color-scheme: light;
+			--ink: #1c2723;
+			--muted: #68756f;
+			--line: #dce2dc;
+			--paper: #f5f6f2;
+			--white: #fff;
+			--green: #176947;
+			--green-dark: #104d35;
+			--green-soft: #e6f1e9;
+			--orange: #d05c32;
+			--orange-soft: #fbede6;
+			--shadow: 0 12px 34px rgba(27, 45, 35, .07);
+			font-family: "Aptos", "Segoe UI", sans-serif;
+			font-synthesis: none;
+		}
+		* { box-sizing: border-box; }
+		body { margin: 0; background: var(--paper); color: var(--ink); }
+		button, input { font: inherit; }
+		button { cursor: pointer; }
+		.topbar { height: 66px; display: flex; align-items: center; justify-content: space-between; padding: 0 clamp(18px, 4vw, 58px); background: var(--white); border-bottom: 1px solid var(--line); }
+		.brand { display: flex; align-items: center; gap: 11px; font-weight: 750; letter-spacing: 0; }
+		.brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; background: var(--green); color: white; font-size: 13px; }
+		.brand small { display: block; color: var(--muted); font-size: 11px; font-weight: 500; margin-top: 2px; }
+		.top-date { font-size: 13px; color: var(--muted); }
+		main { width: min(1200px, calc(100% - 36px)); margin: 34px auto 56px; }
+		.page-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+		.eyebrow { color: var(--green); text-transform: uppercase; font-size: 11px; letter-spacing: 1px; font-weight: 800; margin: 0 0 8px; }
+		h1 { font-size: clamp(25px, 4vw, 34px); line-height: 1.12; letter-spacing: 0; margin: 0; }
+		.intro { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 8px 0 0; max-width: 630px; }
+		.status { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--white); padding: 9px 12px; border-radius: 7px; color: var(--muted); white-space: nowrap; font-size: 12px; }
+		.status-dot { width: 8px; height: 8px; border-radius: 50%; background: #98a49d; }
+		.workspace { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(310px, .85fr); align-items: start; gap: 20px; }
+		.panel { background: var(--white); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); }
+		.form-panel { padding: 24px; }
+		.section-head { display: flex; align-items: center; gap: 11px; margin: 0 0 17px; }
+		.step { width: 26px; height: 26px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; background: var(--green-soft); color: var(--green-dark); font-weight: 800; font-size: 12px; }
+		h2 { font-size: 16px; margin: 0; letter-spacing: 0; }
+		.section-note { font-size: 12px; color: var(--muted); margin: 3px 0 0; }
+		.divider { border: 0; border-top: 1px solid var(--line); margin: 22px 0; }
+		.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+		.field { min-width: 0; }
+		.field.full { grid-column: 1 / -1; }
+		label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+		.hint { color: var(--muted); font-size: 11px; font-weight: 400; }
+		input[type="text"], input[type="tel"], input[type="number"], input[type="date"] { width: 100%; min-height: 42px; border: 1px solid #cfd7d0; border-radius: 5px; padding: 9px 11px; color: var(--ink); background: #fff; outline: none; }
+		input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(23, 105, 71, .12); }
+		.stops { display: grid; gap: 10px; }
+		.stop-row { display: grid; grid-template-columns: 34px minmax(110px, 1fr) minmax(180px, 1.4fr) 36px; gap: 8px; align-items: end; }
+		.stop-index { display: grid; place-items: center; width: 28px; height: 34px; border: 1px solid var(--line); border-radius: 50%; color: var(--green); font-size: 12px; font-weight: 800; }
+		.stop-row input { min-width: 0; }
+		.remove-stop { width: 36px; height: 42px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); background: white; font-size: 19px; }
+		.remove-stop:hover { color: #a93624; border-color: #d5a398; }
+		.inline-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; }
+		.text-button { background: transparent; border: 0; color: var(--green); font-size: 12px; font-weight: 750; padding: 7px 0; }
+		.text-button:hover { text-decoration: underline; }
+		.checkline { display: flex; gap: 9px; align-items: center; color: var(--ink); font-size: 12px; font-weight: 600; }
+		.checkline input { width: 16px; height: 16px; accent-color: var(--green); }
+		.form-error { color: #a93624; background: #fff4ef; border: 1px solid #f0d0c4; padding: 10px 12px; border-radius: 5px; font-size: 12px; line-height: 1.45; margin: 14px 0 0; display: none; }
+		.primary-button { display: inline-flex; justify-content: center; align-items: center; gap: 9px; width: 100%; min-height: 46px; border: 0; border-radius: 5px; color: white; background: var(--green); font-size: 13px; font-weight: 750; margin-top: 18px; }
+		.primary-button:hover { background: var(--green-dark); }
+		.primary-button:disabled { opacity: .62; cursor: wait; }
+		.result-panel { padding: 22px; position: sticky; top: 18px; }
+		.result-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 19px; }
+		.result-top h2 { font-size: 15px; }
+		.map-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 0 0 9px; }
+		.map-heading h2 { font-size: 13px; }
+		.map-heading span { color: var(--muted); font-size: 10px; text-align: right; }
+		#routeMap { width: 100%; height: 300px; margin-bottom: 18px; border: 1px solid var(--line); border-radius: 5px; background: #e8eee8; }
+		.leaflet-container { font: inherit; }
+		.result-tag { background: var(--green-soft); color: var(--green-dark); border-radius: 4px; padding: 5px 8px; text-transform: uppercase; font-size: 10px; letter-spacing: .5px; font-weight: 800; }
+		.empty-state { min-height: 190px; display: grid; align-content: center; text-align: center; padding: 20px 10px; border: 1px dashed #cdd7ce; border-radius: 6px; background: linear-gradient(145deg, #fbfcfa, #f0f5ef); }
+		.empty-symbol { width: 42px; height: 42px; display: grid; place-items: center; margin: 0 auto 12px; border: 1px solid #cbd9cc; border-radius: 50%; color: var(--green); font-size: 18px; }
+		.empty-state strong { font-size: 14px; }
+		.empty-state p { color: var(--muted); font-size: 12px; line-height: 1.5; max-width: 245px; margin: 6px auto 0; }
+		.summary { display: none; }
+		.fuel-highlight { padding: 17px; background: var(--green-dark); color: white; border-radius: 6px; }
+		.fuel-highlight span { display: block; color: #d0e1d5; font-size: 11px; font-weight: 600; }
+		.fuel-highlight strong { display: block; font-size: 36px; line-height: 1.1; margin-top: 6px; letter-spacing: 0; }
+		.fuel-highlight small { font-size: 13px; font-weight: 500; }
+		.metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0 18px; }
+		.metric { padding: 12px; background: #f6f8f5; border: 1px solid #e6ebe5; border-radius: 5px; }
+		.metric span { display: block; color: var(--muted); font-size: 10px; margin-bottom: 5px; }
+		.metric strong { font-size: 16px; }
+		.route-legs { border-top: 1px solid var(--line); padding-top: 14px; }
+		.route-legs h3 { font-size: 12px; margin: 0 0 10px; }
+		.leg { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; color: var(--muted); font-size: 11px; border-bottom: 1px solid #eef1ed; }
+		.leg strong { color: var(--ink); white-space: nowrap; }
+		.message-preview { margin-top: 16px; padding: 13px; background: #f6f8f5; border-left: 3px solid var(--orange); font-size: 12px; line-height: 1.55; white-space: pre-line; }
+		.whatsapp-button { display: flex; justify-content: center; align-items: center; gap: 8px; width: 100%; min-height: 44px; margin-top: 12px; border: 0; border-radius: 5px; color: white; background: #218b58; font-size: 12px; font-weight: 750; text-decoration: none; }
+		.whatsapp-button:hover { background: #176d43; }
+		.disclaimer { color: var(--muted); font-size: 10px; line-height: 1.45; margin: 12px 0 0; }
+		.footer-note { display: flex; gap: 8px; align-items: start; color: var(--muted); font-size: 11px; line-height: 1.5; margin: 18px 2px; }
+		.footer-note strong { color: var(--ink); }
+		@media (max-width: 800px) {
+			main { margin-top: 24px; }
+			.workspace { grid-template-columns: 1fr; }
+			.result-panel { position: static; }
+		}
+		@media (max-width: 560px) {
+			.topbar { height: 58px; padding: 0 16px; }
+			.top-date { font-size: 11px; }
+			main { width: calc(100% - 24px); margin-top: 21px; }
+			.page-heading { align-items: start; flex-direction: column; margin-bottom: 18px; }
+			.form-panel, .result-panel { padding: 17px; }
+			#routeMap { height: 260px; }
+			.fields { gap: 12px; }
+			.stop-row { grid-template-columns: 25px minmax(0, 1fr) 34px; gap: 6px; }
+			.stop-row .field:first-of-type { grid-column: 2 / 4; }
+			.stop-row .stop-coordinate-field { grid-column: 2 / 4; }
+			.stop-index { width: 24px; height: 24px; align-self: center; grid-row: 1 / 3; }
+			.remove-stop { grid-column: 3; grid-row: 1 / 3; height: 38px; }
+			.stop-row label { font-size: 10px; }
+			input[type="text"], input[type="tel"], input[type="number"], input[type="date"] { min-height: 40px; padding: 8px; font-size: 13px; }
+			.inline-actions { align-items: start; flex-direction: column; gap: 5px; }
+		}
+	</style>
+</head>
+<body>
+	<header class="topbar">
+		<div class="brand"><span class="brand-mark">3S</span><span>TRES SIGLOS<small>Operación de transporte</small></span></div>
+		<div class="top-date" id="todayLabel"></div>
+	</header>
+	<main>
+		<div class="page-heading">
+			<div>
+				<p class="eyebrow">Planeación de carga</p>
+				<h1>Combustible por recorrido</h1>
+				<p class="intro">Captura la base, las entregas en el orden de la logística y el rendimiento de la unidad para estimar los litros del día.</p>
+			</div>
+			<div class="status"><span class="status-dot" id="statusDot"></span><span id="statusText">Esperando recorrido</span></div>
+		</div>
+
+		<div class="workspace">
+			<form class="panel form-panel" id="routeForm">
+				<section>
+					<div class="section-head"><span class="step">1</span><div><h2>Unidad y operador</h2><p class="section-note">Datos para calcular y preparar el aviso</p></div></div>
+					<div class="fields">
+						<div class="field"><label for="unit">Unidad / placas</label><input id="unit" type="text" placeholder="Ej. 3525" required></div>
+						<div class="field"><label for="operator">Operador</label><input id="operator" type="text" placeholder="Nombre del operador" required></div>
+						<div class="field"><label for="phone">Celular WhatsApp <span class="hint">con clave de país</span></label><input id="phone" type="tel" inputmode="tel" placeholder="Ej. 525512345678" required></div>
+						<div class="field"><label for="date">Fecha de servicio</label><input id="date" type="date" required></div>
+					</div>
+				</section>
+
+				<hr class="divider">
+
+				<section>
+					<div class="section-head"><span class="step">2</span><div><h2>Base de salida</h2><p class="section-note">Usa latitud y longitud decimal de Google Maps</p></div></div>
+					<div class="fields">
+						<div class="field full"><label for="baseName">Nombre de la base</label><input id="baseName" type="text" value="Centro de Apan, Hidalgo (referencia)" required></div>
+						<div class="field full"><label for="baseCoordinates">Coordenadas fijas de la base</label><input id="baseCoordinates" type="text" value="19.7099, -98.4526" readonly required></div>
+					</div>
+				</section>
+
+				<hr class="divider">
+
+				<section>
+					<div class="section-head"><span class="step">3</span><div><h2>Entregas del recorrido</h2><p class="section-note">Respeta el orden anotado en tu hoja de logística</p></div></div>
+					<div class="stops" id="stops"></div>
+					<div class="inline-actions"><button class="text-button" id="addStop" type="button">+ Agregar cliente</button><label class="checkline"><input id="returnBase" type="checkbox" checked> Considerar ida y vuelta (regreso a la base)</label></div>
+				</section>
+
+				<hr class="divider">
+
+				<section>
+					<div class="section-head"><span class="step">4</span><div><h2>Rendimiento y reserva</h2><p class="section-note">Los kilómetros se consultan por carretera</p></div></div>
+					<div class="fields">
+						<div class="field"><label for="efficiency">Rendimiento <span class="hint">km por litro</span></label><input id="efficiency" type="number" min="0.1" step="any" placeholder="Ej. 5.5" required></div>
+						<div class="field"><label for="reserve">Reserva adicional <span class="hint">por ciento</span></label><input id="reserve" type="number" min="0" max="100" step="1" value="10" required></div>
+					</div>
+				</section>
+
+				<div class="form-error" id="formError" role="alert"></div>
+				<button class="primary-button" id="calculateButton" type="submit">Calcular recorrido y combustible</button>
+			</form>
+
+			<aside class="panel result-panel" aria-live="polite">
+				<div class="result-top"><h2>Resumen del recorrido</h2><span class="result-tag">Estimado</span></div>
+				<div class="map-heading"><h2>Mapa del recorrido</h2><span id="mapStatus">Ingresa coordenadas para ver los puntos</span></div>
+				<div id="routeMap" role="img" aria-label="Mapa con la base y los destinos del recorrido"></div>
+				<div class="empty-state" id="emptyState"><span class="empty-symbol">↗</span><strong>Listo para calcular</strong><p>Completa las coordenadas y el orden de las entregas para obtener la distancia por carretera.</p></div>
+				<div class="summary" id="summary">
+					<div class="fuel-highlight"><span>Combustible sugerido, incluida reserva</span><strong id="fuelTotal">-- <small>L</small></strong></div>
+					<div class="metrics"><div class="metric"><span>Distancia por carretera</span><strong id="distanceTotal">-- km</strong></div><div class="metric"><span>Consumo estimado</span><strong id="fuelBase">-- L</strong></div></div>
+					<div class="route-legs"><h3>Tramos calculados</h3><div id="legsList"></div></div>
+					<div class="message-preview" id="messagePreview"></div>
+					<a class="whatsapp-button" id="whatsappLink" href="#" target="_blank" rel="noopener">Abrir mensaje en WhatsApp</a>
+					<a class="text-button" id="mapsLink" href="#" target="_blank" rel="noopener" style="display:block;text-align:center;margin-top:7px">Ver recorrido en Google Maps</a>
+					<p class="disclaimer">El cálculo es una estimación por ruta. Confirma el recorrido real, las condiciones de carga y el rendimiento antes de autorizar el abastecimiento.</p>
+				</div>
+			</aside>
+		</div>
+		<p class="footer-note"><strong>Nota:</strong> esta versión calcula con las coordenadas capturadas aquí. Todavía no lee automáticamente las hojas de Google ni envía mensajes sin confirmación.</p>
+	</main>
+
+	<template id="stopTemplate">
+		<div class="stop-row">
+			<span class="stop-index"></span>
+			<div class="field"><label>Cliente / destino</label><input class="stop-name" type="text" placeholder="Nombre del cliente" required></div>
+			<div class="field stop-coordinate-field"><label>Coordenadas <span class="hint">latitud, longitud</span></label><input class="stop-coordinates" type="text" placeholder="19.0697033, -98.2022333" required></div>
+			<button class="remove-stop" type="button" aria-label="Eliminar cliente" title="Eliminar cliente">×</button>
+		</div>
+	</template>
+
+	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+	<script>
+		const $ = (selector) => document.querySelector(selector);
+		const stopsContainer = $('#stops');
+		const form = $('#routeForm');
+		const calculateButton = $('#calculateButton');
+		const formError = $('#formError');
+		const monthNames = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+		let routeMap;
+		let mapMarkers;
+		let routeLine;
+
+		function localDateValue(date) {
+			const offset = date.getTimezoneOffset();
+			return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 10);
+		}
+
+		function setToday() {
+			const now = new Date();
+			$('#date').value = localDateValue(now);
+			$('#todayLabel').textContent = `${now.getDate()} de ${monthNames[now.getMonth()]} de ${now.getFullYear()}`;
+		}
+
+		function addStop(name = '') {
+			const fragment = $('#stopTemplate').content.cloneNode(true);
+			const row = fragment.querySelector('.stop-row');
+			row.querySelector('.stop-name').value = name;
+			row.querySelector('.remove-stop').addEventListener('click', () => {
+				if (stopsContainer.children.length <= 1) {
+					showError('Agrega al menos un cliente para calcular el recorrido.');
+					return;
+				}
+				row.remove();
+				renumberStops();
+				updateMap();
+			});
+			stopsContainer.append(fragment);
+			renumberStops();
+		}
+
+		function renumberStops() {
+			[...stopsContainer.querySelectorAll('.stop-row')].forEach((row, index) => {
+				row.querySelector('.stop-index').textContent = index + 1;
+			});
+		}
+
+		function showError(message) {
+			formError.textContent = message;
+			formError.style.display = 'block';
+		}
+
+		function parseCoordinates(rawValue, label) {
+			const values = rawValue.trim().split(/[\s,;]+/).filter(Boolean);
+			if (values.length !== 2) throw new Error(`Pega las coordenadas de ${label} como latitud, longitud. Ejemplo: 19.0697033, -98.2022333.`);
+			const [lat, lon] = values.map(Number);
+			if (!Number.isFinite(lat) || lat < -90 || lat > 90) throw new Error(`La latitud de ${label} no es válida.`);
+			if (!Number.isFinite(lon) || lon < -180 || lon > 180) throw new Error(`La longitud de ${label} no es válida.`);
+			return { lat, lon };
+		}
+
+		function readPoints() {
+			const points = [{
+				name: $('#baseName').value.trim(),
+				...parseCoordinates($('#baseCoordinates').value, 'la base')
+			}];
+			for (const [index, row] of [...stopsContainer.querySelectorAll('.stop-row')].entries()) {
+				const name = row.querySelector('.stop-name').value.trim();
+				if (!name) throw new Error(`Escribe el nombre del cliente ${index + 1}.`);
+				points.push({ name, ...parseCoordinates(row.querySelector('.stop-coordinates').value, name) });
+			}
+			if (points.length < 2) throw new Error('Agrega al menos un cliente para calcular el recorrido.');
+			if ($('#returnBase').checked) points.push({ ...points[0], name: `${points[0].name} (regreso)` });
+			return points;
+		}
+
+		function initializeMap() {
+			if (!window.L) {
+				$('#mapStatus').textContent = 'No se pudo cargar el mapa';
+				return;
+			}
+			routeMap = L.map('routeMap').setView([23.6, -102.5], 5);
+			L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+				attribution: '&copy; OpenStreetMap contributors',
+				maxZoom: 19
+			}).addTo(routeMap);
+			mapMarkers = L.layerGroup().addTo(routeMap);
+			updateMap();
+		}
+
+		function updateMap() {
+			if (!routeMap) return;
+			mapMarkers.clearLayers();
+			routeLine?.remove();
+			const points = [];
+			const baseCoordinates = $('#baseCoordinates').value.trim();
+			if (baseCoordinates) {
+				try {
+					points.push({ name: $('#baseName').value.trim() || 'Base', ...parseCoordinates(baseCoordinates, 'la base') });
+				} catch { }
+			}
+			for (const [index, row] of [...stopsContainer.querySelectorAll('.stop-row')].entries()) {
+				const rawCoordinates = row.querySelector('.stop-coordinates').value.trim();
+				if (!rawCoordinates) continue;
+				try {
+					points.push({ name: row.querySelector('.stop-name').value.trim() || `Destino ${index + 1}`, ...parseCoordinates(rawCoordinates, 'el destino') });
+				} catch { }
+			}
+			for (const [index, point] of points.entries()) {
+				L.circleMarker([point.lat, point.lon], {
+					radius: 8,
+					color: index === 0 ? '#104d35' : '#d05c32',
+					weight: 2,
+					fillColor: index === 0 ? '#218b58' : '#f28a5e',
+					fillOpacity: 1
+				}).bindTooltip(`${index === 0 ? 'Base' : `Destino ${index}`}: ${point.name}`).addTo(mapMarkers);
+			}
+			$('#mapStatus').textContent = points.length ? `${points.length} punto${points.length === 1 ? '' : 's'} en el mapa` : 'Ingresa coordenadas para ver los puntos';
+			if (points.length > 1) {
+				routeMap.fitBounds(points.map(({ lat, lon }) => [lat, lon]), { padding: [24, 24], maxZoom: 12 });
+			} else if (points.length === 1) {
+				routeMap.setView([points[0].lat, points[0].lon], 10);
+			}
+		}
+
+		async function fetchRoute(points) {
+			const coordinates = points.map(({ lon, lat }) => `${lon},${lat}`).join(';');
+			const url = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&steps=false`;
+			const response = await fetch(url);
+			if (!response.ok) throw new Error('No se pudo consultar el servicio de rutas. Intenta de nuevo.');
+			const data = await response.json();
+			if (data.code !== 'Ok' || !data.routes?.[0]) throw new Error('No se encontró una ruta por carretera entre estas coordenadas. Revisa que estén correctas.');
+			return data.routes[0];
+		}
+
+		function drawRoute(route) {
+			if (!routeMap || !route.geometry?.coordinates) return;
+			routeLine?.remove();
+			routeLine = L.geoJSON(route.geometry, {
+				style: { color: '#176947', weight: 5, opacity: 0.85 }
+			}).addTo(routeMap);
+			routeMap.fitBounds(routeLine.getBounds(), { padding: [24, 24], maxZoom: 12 });
+			$('#mapStatus').textContent = 'Ruta por carretera';
+		}
+
+		function formatDate(value) {
+			const [year, month, day] = value.split('-').map(Number);
+			return `${day} de ${monthNames[month - 1]} de ${year}`;
+		}
+
+		function renderResult(points, route, distanceKm, baseLiters, totalLiters, reservePercent) {
+			drawRoute(route);
+			$('#emptyState').style.display = 'none';
+			const summary = $('#summary');
+			summary.style.display = 'block';
+			$('#fuelTotal').innerHTML = `${totalLiters.toFixed(1)} <small>L</small>`;
+			$('#distanceTotal').textContent = `${distanceKm.toFixed(1)} km`;
+			$('#fuelBase').textContent = `${baseLiters.toFixed(1)} L`;
+			$('#legsList').replaceChildren(...route.legs.map((leg, index) => {
+				const row = document.createElement('div');
+				row.className = 'leg';
+				const label = document.createElement('span');
+				label.textContent = `${points[index].name} → ${points[index + 1].name}`;
+				const distance = document.createElement('strong');
+				distance.textContent = `${(leg.distance / 1000).toFixed(1)} km`;
+				row.append(label, distance);
+				return row;
+			}));
+
+			const operator = $('#operator').value.trim();
+			const unit = $('#unit').value.trim();
+			const date = formatDate($('#date').value);
+			const customerList = points.slice(1, $('#returnBase').checked ? -1 : undefined).map((point) => point.name).join(', ');
+			const message = `Hola, ${operator}. Para hoy, ${date}, la unidad ${unit} tiene asignada la ruta: ${customerList}. Debes cargar aproximadamente ${totalLiters.toFixed(1)} litros de combustible (incluye ${reservePercent}% de reserva). Por favor, confirma cuando hayas cargado.`;
+			$('#messagePreview').textContent = message;
+			const phone = $('#phone').value.replace(/\D/g, '');
+			$('#whatsappLink').href = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+			const mapsPoints = points.map(({ lat, lon }) => `${lat},${lon}`);
+			const mapsUrl = new URL('https://www.google.com/maps/dir/');
+			mapsUrl.searchParams.set('api', '1');
+			mapsUrl.searchParams.set('origin', mapsPoints[0]);
+			mapsUrl.searchParams.set('destination', mapsPoints[mapsPoints.length - 1]);
+			if (mapsPoints.length > 2) mapsUrl.searchParams.set('waypoints', mapsPoints.slice(1, -1).join('|'));
+			mapsUrl.searchParams.set('travelmode', 'driving');
+			$('#mapsLink').href = mapsUrl.toString();
+		}
+
+		$('#addStop').addEventListener('click', () => addStop());
+		stopsContainer.addEventListener('input', updateMap);
+		$('#baseName').addEventListener('input', updateMap);
+		form.addEventListener('submit', async (event) => {
+			event.preventDefault();
+			formError.style.display = 'none';
+			if (!form.reportValidity()) return;
+			const phone = $('#phone').value.replace(/\D/g, '');
+			if (phone.length < 10) {
+				showError('Escribe el celular con clave de país, por ejemplo: 52 seguido del número.');
+				return;
+			}
+			const efficiency = Number($('#efficiency').value);
+			const reservePercent = Number($('#reserve').value);
+			if (!Number.isFinite(efficiency) || efficiency <= 0) {
+				showError('El rendimiento debe ser mayor que cero y estar expresado en km por litro.');
+				return;
+			}
+			if (!Number.isFinite(reservePercent) || reservePercent < 0 || reservePercent > 100) {
+				showError('La reserva debe ser un porcentaje entre 0 y 100.');
+				return;
+			}
+
+			calculateButton.disabled = true;
+			calculateButton.textContent = 'Consultando ruta...';
+			$('#statusText').textContent = 'Calculando por carretera';
+			$('#statusDot').style.background = '#d05c32';
+			try {
+				const points = readPoints();
+				const route = await fetchRoute(points);
+				const distanceKm = route.distance / 1000;
+				const baseLiters = distanceKm / efficiency;
+				const totalLiters = baseLiters * (1 + reservePercent / 100);
+				renderResult(points, route, distanceKm, baseLiters, totalLiters, reservePercent);
+				$('#statusText').textContent = 'Recorrido calculado';
+				$('#statusDot').style.background = '#218b58';
+			} catch (error) {
+				showError(error.message || 'Ocurrió un error al calcular el recorrido.');
+				$('#statusText').textContent = 'No se pudo calcular';
+				$('#statusDot').style.background = '#c64d33';
+			} finally {
+				calculateButton.disabled = false;
+				calculateButton.textContent = 'Calcular recorrido y combustible';
+			}
+		});
+
+		setToday();
+		addStop('Cliente de ejemplo');
+		stopsContainer.querySelector('.stop-coordinates').value = '19.0697033, -98.2022333';
+		initializeMap();
+	</script>
+</body>
+</html>
