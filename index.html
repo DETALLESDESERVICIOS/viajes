@@ -213,7 +213,7 @@
 		<div class="stop-row">
 			<span class="stop-index"></span>
 			<div class="field"><label>Cliente / destino</label><input class="stop-name" type="text" placeholder="Nombre del cliente" required></div>
-			<div class="field stop-coordinate-field"><label>Coordenadas <span class="hint">latitud, longitud</span></label><input class="stop-coordinates" type="text" placeholder="19.0697033, -98.2022333" required></div>
+			<div class="field stop-coordinate-field"><label>Coordenadas <span class="hint">latitud, longitud</span></label><input class="stop-coordinates" type="text" placeholder="Pega las coordenadas del cliente" required></div>
 			<div class="stop-actions">
 				<button class="move-stop move-stop-up" type="button" aria-label="Subir cliente" title="Subir cliente">↑</button>
 				<button class="move-stop move-stop-down" type="button" aria-label="Bajar cliente" title="Bajar cliente">↓</button>
@@ -529,8 +529,7 @@
 
 		setToday();
 		loadVehicles();
-		addStop('Cliente de ejemplo');
-		stopsContainer.querySelector('.stop-coordinates').value = '19.0697033, -98.2022333';
+		addStop();
 		initializeMap();
 	</script>
 </body>
