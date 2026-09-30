@@ -55,10 +55,14 @@
 		input[type="text"], input[type="tel"], input[type="number"], input[type="date"] { width: 100%; min-height: 42px; border: 1px solid #cfd7d0; border-radius: 5px; padding: 9px 11px; color: var(--ink); background: #fff; outline: none; }
 		input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(23, 105, 71, .12); }
 		.stops { display: grid; gap: 10px; }
-		.stop-row { display: grid; grid-template-columns: 34px minmax(110px, 1fr) minmax(180px, 1.4fr) 36px; gap: 8px; align-items: end; }
+		.stop-row { display: grid; grid-template-columns: 34px minmax(110px, 1fr) minmax(180px, 1.4fr) auto; gap: 8px; align-items: end; }
 		.stop-index { display: grid; place-items: center; width: 28px; height: 34px; border: 1px solid var(--line); border-radius: 50%; color: var(--green); font-size: 12px; font-weight: 800; }
 		.stop-row input { min-width: 0; }
-		.remove-stop { width: 36px; height: 42px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); background: white; font-size: 19px; }
+		.stop-actions { display: flex; align-items: center; gap: 4px; }
+		.move-stop, .remove-stop { width: 32px; height: 42px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); background: white; }
+		.move-stop { font-size: 16px; }
+		.move-stop:disabled { opacity: .4; cursor: not-allowed; }
+		.remove-stop { font-size: 19px; }
 		.remove-stop:hover { color: #a93624; border-color: #d5a398; }
 		.inline-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; }
 		.text-button { background: transparent; border: 0; color: var(--green); font-size: 12px; font-weight: 750; padding: 7px 0; }
@@ -115,10 +119,11 @@
 			#routeMap { height: 260px; }
 			.fields { gap: 12px; }
 			.stop-row { grid-template-columns: 25px minmax(0, 1fr) 34px; gap: 6px; }
-			.stop-row .field:first-of-type { grid-column: 2 / 4; }
-			.stop-row .stop-coordinate-field { grid-column: 2 / 4; }
-			.stop-index { width: 24px; height: 24px; align-self: center; grid-row: 1 / 3; }
-			.remove-stop { grid-column: 3; grid-row: 1 / 3; height: 38px; }
+			.stop-row .field:first-of-type { grid-column: 2; grid-row: 1; }
+			.stop-row .stop-coordinate-field { grid-column: 2; grid-row: 2; }
+			.stop-row .stop-actions { grid-column: 3; grid-row: 1 / 3; flex-direction: column; align-self: center; }
+			.stop-index { width: 24px; height: 24px; align-self: center; grid-column: 1; grid-row: 1 / 3; }
+			.move-stop, .remove-stop { width: 32px; height: 28px; }
 			.stop-row label { font-size: 10px; }
 			input[type="text"], input[type="tel"], input[type="number"], input[type="date"] { min-height: 40px; padding: 8px; font-size: 13px; }
 			.inline-actions { align-items: start; flex-direction: column; gap: 5px; }
@@ -143,10 +148,11 @@
 		<div class="workspace">
 			<form class="panel form-panel" id="routeForm">
 				<section>
-					<div class="section-head"><span class="step">1</span><div><h2>Unidad y operador</h2><p class="section-note">Datos para calcular y preparar el aviso</p></div></div>
+					<div class="section-head"><span class="step">1</span><div><h2>Unidad y operador</h2><p class="section-note" id="vehicleStatus">Conectando con el catálogo de unidades...</p></div></div>
 					<div class="fields">
-						<div class="field"><label for="unit">Unidad / placas</label><input id="unit" type="text" placeholder="Ej. 3525" required></div>
-						<div class="field"><label for="operator">Operador</label><input id="operator" type="text" placeholder="Nombre del operador" required></div>
+						<div class="field"><label for="economic">ECONOMICO <span class="hint">selecciona un registro</span></label><input id="economic" type="text" list="vehicleOptions" placeholder="Buscar económico" autocomplete="off" required><datalist id="vehicleOptions"></datalist></div>
+						<div class="field"><label for="vehicleName">UNIDAD</label><input id="vehicleName" type="text" readonly required></div>
+						<div class="field full"><label for="operator">ASIGNADO A</label><input id="operator" type="text" readonly required></div>
 						<div class="field"><label for="phone">Celular WhatsApp <span class="hint">con clave de país</span></label><input id="phone" type="tel" inputmode="tel" placeholder="Ej. 525512345678" required></div>
 						<div class="field"><label for="date">Fecha de servicio</label><input id="date" type="date" required></div>
 					</div>
@@ -173,9 +179,9 @@
 				<hr class="divider">
 
 				<section>
-					<div class="section-head"><span class="step">4</span><div><h2>Rendimiento y reserva</h2><p class="section-note">Los kilómetros se consultan por carretera</p></div></div>
+					<div class="section-head"><span class="step">4</span><div><h2>Rendimiento y reserva</h2><p class="section-note">El rendimiento se carga desde el catálogo de unidades</p></div></div>
 					<div class="fields">
-						<div class="field"><label for="efficiency">Rendimiento <span class="hint">km por litro</span></label><input id="efficiency" type="number" min="0.1" step="any" placeholder="Ej. 5.5" required></div>
+						<div class="field"><label for="efficiency">RENDIMIENTO <span class="hint">km por litro</span></label><input id="efficiency" type="number" min="0.1" step="any" placeholder="Se carga al elegir unidad" required></div>
 						<div class="field"><label for="reserve">Reserva adicional <span class="hint">por ciento</span></label><input id="reserve" type="number" min="0" max="100" step="1" value="10" required></div>
 					</div>
 				</section>
@@ -208,7 +214,11 @@
 			<span class="stop-index"></span>
 			<div class="field"><label>Cliente / destino</label><input class="stop-name" type="text" placeholder="Nombre del cliente" required></div>
 			<div class="field stop-coordinate-field"><label>Coordenadas <span class="hint">latitud, longitud</span></label><input class="stop-coordinates" type="text" placeholder="19.0697033, -98.2022333" required></div>
-			<button class="remove-stop" type="button" aria-label="Eliminar cliente" title="Eliminar cliente">×</button>
+			<div class="stop-actions">
+				<button class="move-stop move-stop-up" type="button" aria-label="Subir cliente" title="Subir cliente">↑</button>
+				<button class="move-stop move-stop-down" type="button" aria-label="Bajar cliente" title="Bajar cliente">↓</button>
+				<button class="remove-stop" type="button" aria-label="Eliminar cliente" title="Eliminar cliente">×</button>
+			</div>
 		</div>
 	</template>
 
@@ -220,6 +230,8 @@
 		const calculateButton = $('#calculateButton');
 		const formError = $('#formError');
 		const monthNames = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+		const vehicleApiUrl = 'https://sheetdb.io/api/v1/qvpkovwredk5e';
+		let vehicleRecords = [];
 		let routeMap;
 		let mapMarkers;
 		let routeLine;
@@ -235,10 +247,77 @@
 			$('#todayLabel').textContent = `${now.getDate()} de ${monthNames[now.getMonth()]} de ${now.getFullYear()}`;
 		}
 
+		async function loadVehicles() {
+			const status = $('#vehicleStatus');
+			try {
+				const response = await fetch(vehicleApiUrl);
+				if (!response.ok) throw new Error('No se pudo consultar el catálogo.');
+				const rows = await response.json();
+				if (!Array.isArray(rows)) throw new Error('El catálogo no tiene el formato esperado.');
+				vehicleRecords = rows
+					.filter((row) => row && row.ECONOMICO)
+					.map((row) => ({
+						economic: String(row.ECONOMICO).trim(),
+						unit: String(row.UNIDAD ?? '').trim(),
+						assignedTo: String(row['ASIGNADO A'] ?? '').trim(),
+						efficiency: String(row.RENDIMIENTO ?? '').trim().replace(',', '.')
+					}))
+					.map((record) => ({
+						...record,
+						label: `${record.economic} | ${record.unit} | ${record.assignedTo} | ${record.efficiency || 'sin rendimiento'}`
+					}));
+				$('#vehicleOptions').replaceChildren(...vehicleRecords.map((record) => {
+					const option = document.createElement('option');
+					option.value = record.label;
+					return option;
+				}));
+				status.textContent = `${vehicleRecords.length} registros disponibles. Busca y selecciona uno.`;
+			} catch (error) {
+				status.textContent = 'No se pudo cargar el catálogo. Revisa tu conexión e inténtalo de nuevo.';
+			}
+		}
+
+		function selectVehicle() {
+			const economicInput = $('#economic');
+			const query = economicInput.value.trim().toLocaleLowerCase();
+			const exactRecord = vehicleRecords.find((item) => item.label.toLocaleLowerCase() === query);
+			const sameEconomic = vehicleRecords.filter((item) => item.economic.toLocaleLowerCase() === query);
+			const record = exactRecord || (sameEconomic.length === 1 ? sameEconomic[0] : null);
+			if (record) {
+				economicInput.value = record.economic;
+				$('#vehicleName').value = record.unit;
+				$('#operator').value = record.assignedTo;
+				const efficiency = Number(record.efficiency);
+				$('#efficiency').value = Number.isFinite(efficiency) && efficiency > 0 ? efficiency : '';
+				$('#vehicleStatus').textContent = $('#efficiency').value
+					? 'Unidad y rendimiento cargados desde el catálogo.'
+					: 'El catálogo aún no incluye RENDIMIENTO para esta unidad; captura los km/L manualmente.';
+				return;
+			}
+			$('#vehicleName').value = '';
+			$('#operator').value = '';
+			$('#efficiency').value = '';
+			if (query) $('#vehicleStatus').textContent = 'Elige el registro completo de las sugerencias.';
+		}
+
 		function addStop(name = '') {
 			const fragment = $('#stopTemplate').content.cloneNode(true);
 			const row = fragment.querySelector('.stop-row');
 			row.querySelector('.stop-name').value = name;
+			row.querySelector('.move-stop-up').addEventListener('click', () => {
+				const previousRow = row.previousElementSibling;
+				if (!previousRow) return;
+				stopsContainer.insertBefore(row, previousRow);
+				renumberStops();
+				updateMap();
+			});
+			row.querySelector('.move-stop-down').addEventListener('click', () => {
+				const nextRow = row.nextElementSibling;
+				if (!nextRow) return;
+				stopsContainer.insertBefore(nextRow, row);
+				renumberStops();
+				updateMap();
+			});
 			row.querySelector('.remove-stop').addEventListener('click', () => {
 				if (stopsContainer.children.length <= 1) {
 					showError('Agrega al menos un cliente para calcular el recorrido.');
@@ -255,6 +334,8 @@
 		function renumberStops() {
 			[...stopsContainer.querySelectorAll('.stop-row')].forEach((row, index) => {
 				row.querySelector('.stop-index').textContent = index + 1;
+				row.querySelector('.move-stop-up').disabled = index === 0;
+				row.querySelector('.move-stop-down').disabled = index === stopsContainer.children.length - 1;
 			});
 		}
 
@@ -381,10 +462,11 @@
 			}));
 
 			const operator = $('#operator').value.trim();
-			const unit = $('#unit').value.trim();
+			const economic = $('#economic').value.trim();
+			const vehicleName = $('#vehicleName').value.trim();
 			const date = formatDate($('#date').value);
 			const customerList = points.slice(1, $('#returnBase').checked ? -1 : undefined).map((point) => point.name).join(', ');
-			const message = `Hola, ${operator}. Para hoy, ${date}, la unidad ${unit} tiene asignada la ruta: ${customerList}. Debes cargar aproximadamente ${totalLiters.toFixed(1)} litros de combustible (incluye ${reservePercent}% de reserva). Por favor, confirma cuando hayas cargado.`;
+			const message = `Hola, ${operator}. Para hoy, ${date}, la unidad ${economic} (${vehicleName}) tiene asignada la ruta: ${customerList}. Debes cargar aproximadamente ${totalLiters.toFixed(1)} litros de combustible (incluye ${reservePercent}% de reserva). Por favor, confirma cuando hayas cargado.`;
 			$('#messagePreview').textContent = message;
 			const phone = $('#phone').value.replace(/\D/g, '');
 			$('#whatsappLink').href = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
@@ -399,6 +481,7 @@
 		}
 
 		$('#addStop').addEventListener('click', () => addStop());
+		$('#economic').addEventListener('input', selectVehicle);
 		stopsContainer.addEventListener('input', updateMap);
 		$('#baseName').addEventListener('input', updateMap);
 		form.addEventListener('submit', async (event) => {
@@ -445,6 +528,7 @@
 		});
 
 		setToday();
+		loadVehicles();
 		addStop('Cliente de ejemplo');
 		stopsContainer.querySelector('.stop-coordinates').value = '19.0697033, -98.2022333';
 		initializeMap();
