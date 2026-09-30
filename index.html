@@ -59,9 +59,12 @@
 		.stop-index { display: grid; place-items: center; width: 28px; height: 34px; border: 1px solid var(--line); border-radius: 50%; color: var(--green); font-size: 12px; font-weight: 800; }
 		.stop-row input { min-width: 0; }
 		.stop-actions { display: flex; align-items: center; gap: 4px; }
-		.move-stop, .remove-stop { width: 32px; height: 42px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); background: white; }
+		.move-stop, .remove-stop, .pick-stop { width: 32px; height: 42px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); background: white; }
 		.move-stop { font-size: 16px; }
 		.move-stop:disabled { opacity: .4; cursor: not-allowed; }
+		.pick-stop { font-size: 16px; }
+		.pick-stop:hover, .stop-row.map-pick-active .pick-stop { color: var(--green-dark); border-color: var(--green); background: var(--green-soft); }
+		.stop-row.map-pick-active .stop-coordinate-field input { border-color: var(--green); box-shadow: 0 0 0 3px rgba(23, 105, 71, .12); }
 		.remove-stop { font-size: 19px; }
 		.remove-stop:hover { color: #a93624; border-color: #d5a398; }
 		.inline-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; }
@@ -124,6 +127,7 @@
 			.stop-row .stop-actions { grid-column: 3; grid-row: 1 / 3; flex-direction: column; align-self: center; }
 			.stop-index { width: 24px; height: 24px; align-self: center; grid-column: 1; grid-row: 1 / 3; }
 			.move-stop, .remove-stop { width: 32px; height: 28px; }
+			.pick-stop { width: 32px; height: 28px; }
 			.stop-row label { font-size: 10px; }
 			input[type="text"], input[type="tel"], input[type="number"], input[type="date"] { min-height: 40px; padding: 8px; font-size: 13px; }
 			.inline-actions { align-items: start; flex-direction: column; gap: 5px; }
@@ -214,6 +218,7 @@
 			<div class="field"><label>Cliente / destino</label><input class="stop-name" type="text" placeholder="Nombre del cliente" required></div>
 			<div class="field stop-coordinate-field"><label>Coordenadas <span class="hint">latitud, longitud</span></label><input class="stop-coordinates" type="text" placeholder="Pega las coordenadas del cliente" required></div>
 			<div class="stop-actions">
+				<button class="pick-stop" type="button" aria-label="Elegir ubicación del cliente en el mapa" title="Elegir ubicación en el mapa">⌖</button>
 				<button class="move-stop move-stop-up" type="button" aria-label="Subir cliente" title="Subir cliente">↑</button>
 				<button class="move-stop move-stop-down" type="button" aria-label="Bajar cliente" title="Bajar cliente">↓</button>
 				<button class="remove-stop" type="button" aria-label="Eliminar cliente" title="Eliminar cliente">×</button>
@@ -234,6 +239,7 @@
 		let routeMap;
 		let mapMarkers;
 		let routeLine;
+		let mapPickTarget;
 
 		function localDateValue(date) {
 			const offset = date.getTimezoneOffset();
@@ -303,6 +309,18 @@
 			const fragment = $('#stopTemplate').content.cloneNode(true);
 			const row = fragment.querySelector('.stop-row');
 			row.querySelector('.stop-name').value = name;
+			row.querySelector('.pick-stop').addEventListener('click', () => {
+				if (!routeMap) {
+					$('#mapStatus').textContent = 'El mapa todavía no está disponible.';
+					return;
+				}
+				mapPickTarget?.row.classList.remove('map-pick-active');
+				mapPickTarget = { row, input: row.querySelector('.stop-coordinates') };
+				row.classList.add('map-pick-active');
+				routeMap.getContainer().classList.add('map-picking');
+				const clientName = row.querySelector('.stop-name').value.trim() || 'este cliente';
+				$('#mapStatus').textContent = `Haz clic en el mapa para ubicar ${clientName}.`;
+			});
 			row.querySelector('.move-stop-up').addEventListener('click', () => {
 				const previousRow = row.previousElementSibling;
 				if (!previousRow) return;
@@ -321,6 +339,10 @@
 				if (stopsContainer.children.length <= 1) {
 					showError('Agrega al menos un cliente para calcular el recorrido.');
 					return;
+				}
+				if (mapPickTarget?.row === row) {
+					mapPickTarget = null;
+					routeMap?.getContainer().classList.remove('map-picking');
 				}
 				row.remove();
 				renumberStops();
@@ -373,6 +395,17 @@
 				return;
 			}
 			routeMap = L.map('routeMap').setView([23.6, -102.5], 5);
+			routeMap.on('click', ({ latlng }) => {
+				if (!mapPickTarget) return;
+				const { row, input } = mapPickTarget;
+				const clientName = row.querySelector('.stop-name').value.trim() || 'cliente';
+				input.value = `${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`;
+				row.classList.remove('map-pick-active');
+				mapPickTarget = null;
+				routeMap.getContainer().classList.remove('map-picking');
+				input.dispatchEvent(new Event('input', { bubbles: true }));
+				$('#mapStatus').textContent = `Ubicación guardada para ${clientName}.`;
+			});
 			L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 				attribution: '&copy; OpenStreetMap contributors',
 				maxZoom: 19
