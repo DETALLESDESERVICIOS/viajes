@@ -114,6 +114,12 @@
 		.disclaimer { color: var(--muted); font-size: 10px; line-height: 1.45; margin: 12px 0 0; }
 		.footer-note { display: flex; gap: 8px; align-items: start; color: var(--muted); font-size: 11px; line-height: 1.5; margin: 18px 2px; }
 		.footer-note strong { color: var(--ink); }
+		.ocr-results { display: grid; gap: 8px; margin-top: 14px; }
+		.ocr-row { display: grid; grid-template-columns: 20px minmax(0, 1.3fr) minmax(0, 1fr); gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line); }
+		.ocr-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--green); }
+		.ocr-row input[type="text"] { min-height: 34px; padding: 6px 8px; font-size: 12px; }
+		.ocr-header-row { display: grid; grid-template-columns: 20px minmax(0, 1.3fr) minmax(0, 1fr); gap: 8px; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); font-weight: 800; padding-bottom: 4px; border-bottom: 2px solid var(--line); }
+		.ocr-add-button { margin-top: 10px; }
 		@media (max-width: 800px) {
 			main { margin-top: 24px; }
 			.workspace { grid-template-columns: 1fr; }
@@ -195,6 +201,17 @@
 					</div>
 				</section>
 
+				<hr class="divider">
+
+				<section>
+					<div class="section-head"><span class="step">5</span><div><h2>Importar entregas desde una foto (opcional)</h2><p class="section-note">Sube la captura de tu hoja de logística; se leen las columnas DESTINO y UNIDAD con OCR</p></div></div>
+					<div class="fields">
+						<div class="field full"><label for="ocrImageInput">Imagen de la hoja <span class="hint">foto o captura legible, JPG/PNG</span></label><input id="ocrImageInput" type="file" accept="image/*"></div>
+					</div>
+					<div class="inline-actions"><button class="text-button" id="ocrProcessButton" type="button">Leer imagen (OCR)</button><button class="text-button" id="ocrClearButton" type="button">Borrar todo</button><span class="section-note" id="ocrStatus"></span></div>
+					<div class="ocr-results" id="ocrResults"></div>
+				</section>
+
 				<div class="form-error" id="formError" role="alert"></div>
 				<button class="primary-button" id="calculateButton" type="submit">Calcular recorrido y combustible</button>
 			</form>
@@ -233,6 +250,7 @@
 	</template>
 
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+	<script src="https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"></script>
 	<script>
 		const $ = (selector) => document.querySelector(selector);
 		const stopsContainer = $('#stops');
@@ -594,7 +612,6 @@
 			const phone = $('#phone').value.replace(/\D/g, '');
 			const whatsappLink = $('#whatsappLink');
 			whatsappLink.href = phone.length >= 10 ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}` : '#';
-			whatsappLink.style.display = phone.length >= 10 ? 'flex' : 'none';
 			const mapsPoints = points.map(({ lat, lon }) => `${lat},${lon}`);
 			const mapsUrl = new URL('https://www.google.com/maps/dir/');
 			mapsUrl.searchParams.set('api', '1');
@@ -605,8 +622,163 @@
 			$('#mapsLink').href = mapsUrl.toString();
 		}
 
+		function stripAccents(value) {
+			return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+		}
+
+		function findHeaderWord(words, pattern) {
+			return words.find((word) => pattern.test(stripAccents(word.text).toUpperCase()));
+		}
+
+		function wordCenterX(word) {
+			return (word.bbox.x0 + word.bbox.x1) / 2;
+		}
+
+		function extractOcrRows(lines) {
+			let headerLine = null;
+			let headerWords = [];
+			for (const line of lines) {
+				const words = line.words || [];
+				const texts = words.map((word) => stripAccents(word.text).toUpperCase());
+				if (texts.some((text) => text.includes('DESTINO')) && texts.some((text) => text.includes('UNIDAD'))) {
+					headerLine = line;
+					headerWords = words;
+					break;
+				}
+			}
+			if (!headerLine) return [];
+			const ordenWord = findHeaderWord(headerWords, /^ORDEN$/);
+			const destinoWord = findHeaderWord(headerWords, /DESTINO/);
+			const almacenWord = findHeaderWord(headerWords, /^ALMAC/);
+			const cantidadWord = findHeaderWord(headerWords, /^CANTIDAD$/);
+			const unidadWord = findHeaderWord(headerWords, /UNIDAD/);
+			const quienWord = findHeaderWord(headerWords, /^QUIEN$/);
+			if (!destinoWord || !unidadWord) return [];
+
+			const destinoLeft = ordenWord ? (ordenWord.bbox.x0 + destinoWord.bbox.x0) / 2 : destinoWord.bbox.x0 - 40;
+			const destinoRight = almacenWord ? (destinoWord.bbox.x0 + almacenWord.bbox.x0) / 2 : destinoWord.bbox.x1 + 150;
+			const unidadLeft = cantidadWord ? (cantidadWord.bbox.x0 + unidadWord.bbox.x0) / 2 : unidadWord.bbox.x0 - 40;
+			const unidadRight = quienWord ? (unidadWord.bbox.x0 + quienWord.bbox.x0) / 2 : unidadWord.bbox.x1 + 150;
+			const isHeaderText = (text) => /^(ORDEN|DESTINO|ALMACEN|CANTIDAD|UNIDAD|CARGA|DE)$/.test(stripAccents(text).toUpperCase());
+
+			const bodyLines = lines
+				.filter((line) => line !== headerLine && line.bbox.y0 > headerLine.bbox.y1)
+				.sort((a, b) => a.bbox.y0 - b.bbox.y0);
+
+			// la celda de DESTINO suele abarcar varias líneas de OCR cuando trae más de una UNIDAD
+			const rows = [];
+			let currentRow = null;
+			for (const line of bodyLines) {
+				const words = line.words || [];
+				const destino = words
+					.filter((word) => wordCenterX(word) >= destinoLeft && wordCenterX(word) < destinoRight)
+					.sort((a, b) => a.bbox.x0 - b.bbox.x0)
+					.map((word) => word.text).join(' ').trim();
+				const unidad = words
+					.filter((word) => wordCenterX(word) >= unidadLeft && wordCenterX(word) < unidadRight)
+					.sort((a, b) => a.bbox.x0 - b.bbox.x0)
+					.map((word) => word.text).join(' ').trim();
+				const validDestino = destino.length >= 3 && !isHeaderText(destino);
+				if (validDestino) {
+					currentRow = { destino, unidadParts: unidad ? [unidad] : [] };
+					rows.push(currentRow);
+				} else if (unidad && currentRow) {
+					currentRow.unidadParts.push(unidad);
+				}
+			}
+			return rows.map((row) => ({ destino: row.destino, unidad: row.unidadParts.join(' / ') }));
+		}
+
+		function renderOcrResults(rows) {
+			const container = $('#ocrResults');
+			const headerRow = document.createElement('div');
+			headerRow.className = 'ocr-header-row';
+			const headerCheck = document.createElement('span');
+			const headerDestino = document.createElement('span');
+			headerDestino.textContent = 'Destino (a dónde va)';
+			const headerUnidad = document.createElement('span');
+			headerUnidad.textContent = 'Unidad (económico)';
+			headerRow.append(headerCheck, headerDestino, headerUnidad);
+			const rowElements = rows.map((row) => {
+				const wrapper = document.createElement('div');
+				wrapper.className = 'ocr-row';
+				const checkbox = document.createElement('input');
+				checkbox.type = 'checkbox';
+				checkbox.checked = true;
+				const destinoInput = document.createElement('input');
+				destinoInput.type = 'text';
+				destinoInput.className = 'ocr-destino';
+				destinoInput.value = row.destino;
+				const unidadInput = document.createElement('input');
+				unidadInput.type = 'text';
+				unidadInput.className = 'ocr-unidad';
+				unidadInput.placeholder = 'Unidad (opcional)';
+				unidadInput.value = row.unidad;
+				wrapper.append(checkbox, destinoInput, unidadInput);
+				return wrapper;
+			});
+			const addButton = document.createElement('button');
+			addButton.type = 'button';
+			addButton.className = 'text-button ocr-add-button';
+			addButton.textContent = '+ Agregar seleccionados a la ruta';
+			addButton.addEventListener('click', () => {
+				let added = 0;
+				container.querySelectorAll('.ocr-row').forEach((rowEl) => {
+					const checkbox = rowEl.querySelector('input[type="checkbox"]');
+					if (!checkbox.checked) return;
+					const destino = rowEl.querySelector('.ocr-destino').value.trim();
+					const unidad = rowEl.querySelector('.ocr-unidad').value.trim();
+					if (!destino) return;
+					addStop(unidad ? `${destino} (${unidad})` : destino);
+					added += 1;
+				});
+				$('#ocrStatus').textContent = added ? `${added} cliente${added === 1 ? '' : 's'} agregado${added === 1 ? '' : 's'} al recorrido.` : 'Selecciona al menos una fila para agregar.';
+				updateMap();
+			});
+			container.replaceChildren(headerRow, ...rowElements, addButton);
+		}
+
+		function clearOcrResults() {
+			$('#ocrImageInput').value = '';
+			$('#ocrResults').replaceChildren();
+			$('#ocrStatus').textContent = '';
+		}
+
+		async function processOcrImage() {
+			const status = $('#ocrStatus');
+			const button = $('#ocrProcessButton');
+			const file = $('#ocrImageInput').files?.[0];
+			if (!file) {
+				status.textContent = 'Selecciona primero una imagen.';
+				return;
+			}
+			if (!window.Tesseract) {
+				status.textContent = 'No se pudo cargar el motor de OCR. Revisa tu conexión.';
+				return;
+			}
+			button.disabled = true;
+			status.textContent = 'Leyendo imagen, esto puede tardar unos segundos...';
+			$('#ocrResults').replaceChildren();
+			try {
+				const { data } = await Tesseract.recognize(file, 'spa');
+				const rows = extractOcrRows(data.lines || []);
+				if (!rows.length) {
+					status.textContent = 'No se detectaron las columnas DESTINO y UNIDAD. Prueba con una imagen más clara o recorta solo la tabla.';
+					return;
+				}
+				renderOcrResults(rows);
+				status.textContent = `${rows.length} fila${rows.length === 1 ? '' : 's'} detectada${rows.length === 1 ? '' : 's'}. Revisa y ajusta antes de agregar.`;
+			} catch (error) {
+				status.textContent = 'No se pudo leer la imagen. Intenta con otra foto más clara.';
+			} finally {
+				button.disabled = false;
+			}
+		}
+
 		$('#addStop').addEventListener('click', () => addStop());
 		$('#economic').addEventListener('input', selectVehicle);
+		$('#ocrProcessButton').addEventListener('click', processOcrImage);
+		$('#ocrClearButton').addEventListener('click', clearOcrResults);
 		stopsContainer.addEventListener('input', updateMap);
 		$('#baseName').addEventListener('input', updateMap);
 		form.addEventListener('submit', async (event) => {
