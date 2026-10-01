@@ -166,9 +166,9 @@
 				<section>
 					<div class="section-head"><span class="step">1</span><div><h2>Unidad y operador</h2><p class="section-note" id="vehicleStatus">Conectando con el catálogo de unidades...</p></div></div>
 					<div class="fields">
-						<div class="field"><label for="economic">ECONOMICO <span class="hint">selecciona un registro</span></label><input id="economic" type="text" list="vehicleOptions" placeholder="Buscar económico" autocomplete="off" required><datalist id="vehicleOptions"></datalist></div>
-						<div class="field"><label for="vehicleName">UNIDAD</label><input id="vehicleName" type="text" readonly></div>
-						<div class="field full"><label for="operator">ASIGNADO A</label><input id="operator" type="text" readonly></div>
+						<div class="field"><label for="economic">ECONOMICO <span class="hint">selecciona o escribe</span></label><input id="economic" type="text" list="vehicleOptions" placeholder="Buscar o escribir económico" autocomplete="off" required><datalist id="vehicleOptions"></datalist></div>
+						<div class="field"><label for="vehicleName">UNIDAD</label><input id="vehicleName" type="text" placeholder="Captura la unidad"></div>
+						<div class="field full"><label for="operator">ASIGNADO A</label><input id="operator" type="text" placeholder="Captura el operador"></div>
 						<div class="field"><label for="phone">Celular WhatsApp <span class="hint">opcional, con clave de país</span></label><input id="phone" type="tel" inputmode="tel" placeholder="Ej. 525512345678"></div>
 						<div class="field"><label for="date">Fecha de servicio</label><input id="date" type="date"></div>
 					</div>
@@ -326,7 +326,9 @@
 			$('#vehicleName').value = '';
 			$('#operator').value = '';
 			$('#efficiency').value = '';
-			if (query) $('#vehicleStatus').textContent = 'Elige el registro completo de las sugerencias.';
+			$('#vehicleStatus').textContent = query
+				? 'Número no encontrado; captura unidad, operador y rendimiento manualmente.'
+				: 'Selecciona una unidad del catálogo o captura sus datos manualmente.';
 		}
 
 		function addStop(name = '') {
