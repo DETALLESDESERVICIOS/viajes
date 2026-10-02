@@ -615,16 +615,17 @@
 			$('#fuelBase').textContent = `${baseLiters.toFixed(1)} L`;
 			const tankValue = $('#tankCapacity').value.trim();
 			const tankCapacity = parseTankCapacity(tankValue);
+			const refuelNeeded = tankCapacity === null ? 0 : Math.max(totalLiters - tankCapacity, 0);
 			const recommendation = $('#fuelRecommendation');
 			if (tankCapacity === null) {
 				recommendation.className = 'fuel-recommendation';
-				recommendation.textContent = `Se estima un consumo de ${totalLiters.toFixed(1)} L. Considera autorizar esa cantidad con tarjeta, ajustándola al nivel actual de combustible. Captura la capacidad de los tanques para verificar si requiere recarga durante el recorrido.`;
+				recommendation.textContent = 'Captura la capacidad total de los tanques para verificar si requiere una recarga durante el recorrido.';
 			} else if (totalLiters > tankCapacity) {
 				recommendation.className = 'fuel-recommendation is-warning';
-				recommendation.textContent = `ALERTA: el recorrido estima ${totalLiters.toFixed(1)} L y la capacidad total es ${tankCapacity.toFixed(1)} L (${tankValue}). La unidad no puede llevar todo ese combustible en los tanques a la vez. Planea una recarga durante el recorrido y ajusta la carga con tarjeta al nivel actual.`;
+				recommendation.textContent = `ALERTA: el recorrido estima ${totalLiters.toFixed(1)} L y la capacidad total es ${tankCapacity.toFixed(1)} L (${tankValue}). Como la unidad sale con los tanques llenos, carga al menos ${refuelNeeded.toFixed(1)} L adicionales con tarjeta o saldo normal durante el recorrido para llegar a tu destino sin contratiempos.`;
 			} else {
 				recommendation.className = 'fuel-recommendation';
-				recommendation.textContent = `Para este recorrido se estima un consumo de ${totalLiters.toFixed(1)} L. Se recomienda considerar esa cantidad para autorizar con tarjeta, descontando el combustible que ya tenga la unidad. Capacidad total de tanques: ${tankCapacity.toFixed(1)} L (${tankValue}).`;
+				recommendation.textContent = `Con los tanques llenos (${tankCapacity.toFixed(1)} L), la unidad puede cubrir el consumo estimado de ${totalLiters.toFixed(1)} L sin recarga adicional durante el recorrido.`;
 			}
 			$('#legsList').replaceChildren(...route.legs.map((leg, index) => {
 				const row = document.createElement('div');
@@ -644,10 +645,10 @@
 			const customerList = points.slice(1, $('#returnBase').checked ? -1 : undefined).map((point) => point.name).join(', ');
 			const greeting = operator ? `Hola, ${operator}.` : 'Hola.';
 			const vehicleDescription = vehicleName ? ` (${vehicleName})` : '';
-			const tankNotice = tankCapacity !== null && totalLiters > tankCapacity
-				? ` La capacidad total de sus tanques es ${tankCapacity.toFixed(1)} L, por lo que requiere una recarga durante el recorrido.`
-				: '';
-			const message = `${greeting} Para hoy, ${date}, la unidad ${economic}${vehicleDescription} tiene asignada la ruta: ${customerList}. El consumo estimado es de ${totalLiters.toFixed(1)} litros. Considera autorizar con tarjeta esa cantidad, descontando el combustible que ya tenga.${tankNotice} Por favor, confirma cuando hayas cargado.`;
+			const fuelInstruction = tankCapacity !== null && totalLiters > tankCapacity
+				? ` Como la unidad sale con tanque lleno, carga al menos ${refuelNeeded.toFixed(1)} L adicionales con tarjeta o saldo normal durante el recorrido.`
+				: ' La unidad sale con los tanques llenos y no requiere recarga adicional en ruta.';
+			const message = `${greeting} Para hoy, ${date}, la unidad ${economic}${vehicleDescription} tiene asignada la ruta: ${customerList}. El consumo estimado es de ${totalLiters.toFixed(1)} litros.${fuelInstruction} Por favor, confirma cuando hayas cargado.`;
 			$('#messagePreview').textContent = message;
 			const phone = $('#phone').value.replace(/\D/g, '');
 			const whatsappLink = $('#whatsappLink');
