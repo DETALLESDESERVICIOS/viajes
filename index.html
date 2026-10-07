@@ -116,6 +116,23 @@
 		.disclaimer { color: var(--muted); font-size: 10px; line-height: 1.45; margin: 12px 0 0; }
 		.footer-note { display: flex; gap: 8px; align-items: start; color: var(--muted); font-size: 11px; line-height: 1.5; margin: 18px 2px; }
 		.footer-note strong { color: var(--ink); }
+		.unit-list { display: grid; gap: 8px; }
+		.unit-card { border: 1px solid var(--line); border-radius: 6px; background: white; }
+		.unit-card.is-active { border-color: var(--green); box-shadow: 0 0 0 2px rgba(23, 105, 71, .1); }
+		.unit-card summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 11px 13px; cursor: pointer; font-size: 13px; font-weight: 700; list-style: none; }
+		.unit-card summary::-webkit-details-marker { display: none; }
+		.unit-card summary small { display: block; color: var(--muted); font-weight: 500; font-size: 11px; margin-top: 2px; }
+		.unit-badge { background: var(--green-soft); color: var(--green-dark); border-radius: 4px; padding: 4px 7px; font-size: 10px; font-weight: 800; white-space: nowrap; }
+		.unit-badge.is-pending { background: #eef1ed; color: var(--muted); }
+		.unit-body { padding: 0 13px 12px; font-size: 12px; color: var(--muted); line-height: 1.5; display: grid; gap: 6px; }
+		.unit-body a, .unit-body button { justify-self: start; }
+		.wa-panel { margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-left: 3px solid #218b58; border-radius: 6px; background: #f9fbf8; }
+		.wa-panel[hidden] { display: none; }
+		.wa-panel h3 { font-size: 13px; margin: 0 0 3px; }
+		.wa-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+		.wa-row small { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+		.wa-row em { color: var(--muted); font-size: 11px; white-space: nowrap; }
+		.wa-row .whatsapp-button { width: auto; min-height: 34px; margin: 0; padding: 0 12px; white-space: nowrap; }
 		@media (max-width: 800px) {
 			main { margin-top: 24px; }
 			.workspace { grid-template-columns: 1fr; }
@@ -159,6 +176,20 @@
 
 		<div class="workspace">
 			<form class="panel form-panel" id="routeForm">
+				<section>
+					<div class="section-head"><span class="step">★</span><div><h2>Unidades del día</h2><p class="section-note">Cada unidad tiene su operador, celular, combustible y ruta. Despliega una para ver su resultado.</p></div></div>
+					<div class="unit-list" id="unitList"></div>
+					<div class="inline-actions"><button class="text-button" id="addUnit" type="button">+ Agregar unidad</button></div>
+					<div class="wa-panel" id="waPanel" hidden>
+						<h3>Mensajes por WhatsApp</h3>
+						<p class="section-note">Aparecen las unidades que ya tienen destinos seleccionados. Calcula las rutas y envía a cada operador.</p>
+						<div id="waList"></div>
+						<button class="text-button" id="calculateAll" type="button">Calcular rutas y preparar WhatsApp</button>
+					</div>
+				</section>
+
+				<hr class="divider">
+
 				<section>
 					<div class="section-head"><span class="step">1</span><div><h2>Unidad y operador</h2><p class="section-note" id="vehicleStatus">Conectando con el catálogo de unidades...</p></div></div>
 					<div class="fields">
@@ -571,6 +602,12 @@
 				}).bindTooltip(`${index === 0 ? 'Base' : `Destino ${index}`}: ${point.name}`).addTo(mapMarkers);
 			}
 			$('#mapStatus').textContent = points.length ? `${points.length} punto${points.length === 1 ? '' : 's'} en el mapa` : 'Ingresa coordenadas para ver los puntos';
+			if (units[activeUnit]) {
+				const before = JSON.stringify(units[activeUnit].stops);
+				snapshotUnit();
+				if (before !== JSON.stringify(units[activeUnit].stops)) units[activeUnit].result = null;
+				renderUnits();
+			}
 			const reach = reachRadiusKm();
 			const reachInfo = $('#reachInfo');
 			let reachBounds;
@@ -685,6 +722,182 @@
 			if (mapsPoints.length > 2) mapsUrl.searchParams.set('waypoints', mapsPoints.slice(1, -1).join('|'));
 			mapsUrl.searchParams.set('travelmode', 'driving');
 			$('#mapsLink').href = mapsUrl.toString();
+			const unit = units[activeUnit];
+			if (unit) {
+				unit.result = {
+					liters: totalLiters,
+					distanceKm,
+					note: recommendation.textContent,
+					whatsapp: whatsappLink.href,
+					maps: mapsUrl.toString()
+				};
+				renderUnits();
+			}
+		}
+
+		const units = [];
+		const STORAGE_KEY = 'viajes.units.v1';
+		let activeUnit = 0;
+
+		function blankUnit() {
+			return { economic: '', vehicleName: '', operator: '', phone: '', fuelPercent: '100', tankCapacity: '', efficiency: '', returnBase: true, stops: [{ name: '', coords: '' }], result: null };
+		}
+
+		function snapshotUnit() {
+			const unit = units[activeUnit];
+			if (!unit) return;
+			Object.assign(unit, {
+				economic: $('#economic').value.trim(),
+				vehicleName: $('#vehicleName').value,
+				operator: $('#operator').value,
+				phone: $('#phone').value,
+				fuelPercent: $('#fuelPercent').value,
+				tankCapacity: $('#tankCapacity').value,
+				efficiency: $('#efficiency').value,
+				returnBase: $('#returnBase').checked,
+				stops: [...stopsContainer.querySelectorAll('.stop-row')].map((row) => ({
+					name: row.querySelector('.stop-name').value,
+					coords: row.querySelector('.stop-coordinates').value
+				}))
+			});
+		}
+
+		function loadUnit(unit) {
+			$('#economic').value = unit.economic;
+			$('#vehicleName').value = unit.vehicleName;
+			$('#operator').value = unit.operator;
+			$('#phone').value = unit.phone;
+			$('#fuelPercent').value = unit.fuelPercent;
+			$('#tankCapacity').value = unit.tankCapacity;
+			$('#efficiency').value = unit.efficiency;
+			$('#returnBase').checked = unit.returnBase;
+			mapPickTarget = null;
+			routeMap?.getContainer().classList.remove('map-picking');
+			stopsContainer.replaceChildren();
+			for (const stop of unit.stops) {
+				addStop(stop.name);
+				stopsContainer.lastElementChild.querySelector('.stop-coordinates').value = stop.coords;
+			}
+			if (!unit.stops.length) addStop();
+			$('#emptyState').style.display = '';
+			$('#summary').style.display = '';
+			formError.style.display = 'none';
+			updateFuelLiters();
+			updateMap();
+		}
+
+		function selectUnit(index) {
+			if (index === activeUnit) return;
+			snapshotUnit();
+			activeUnit = index;
+			loadUnit(units[index]);
+			renderUnits();
+		}
+
+		function addUnit() {
+			snapshotUnit();
+			units.push(blankUnit());
+			activeUnit = units.length - 1;
+			loadUnit(units[activeUnit]);
+			renderUnits();
+		}
+
+		function removeUnit(index) {
+			if (units.length === 1) units[0] = blankUnit();
+			else units.splice(index, 1);
+			activeUnit = Math.min(index === activeUnit ? 0 : activeUnit - (index < activeUnit ? 1 : 0), units.length - 1);
+			loadUnit(units[activeUnit]);
+			renderUnits();
+		}
+
+		function renderUnits() {
+			$('#unitList').replaceChildren(...units.map((unit, index) => {
+				const card = document.createElement('details');
+				card.className = `unit-card${index === activeUnit ? ' is-active' : ''}`;
+				card.open = index === activeUnit || (unit.result && card.open);
+				const summary = document.createElement('summary');
+				const title = document.createElement('span');
+				title.textContent = unit.economic || `Unidad ${index + 1} (sin número)`;
+				const sub = document.createElement('small');
+				sub.textContent = [unit.operator || 'sin operador', unit.phone].filter(Boolean).join(' · ');
+				title.append(sub);
+				const badge = document.createElement('span');
+				badge.className = `unit-badge${unit.result ? '' : ' is-pending'}`;
+				badge.textContent = index === activeUnit ? 'Editando' : unit.result ? `${unit.result.liters.toFixed(0)} L` : `${unit.fuelPercent || 0}%`;
+				summary.append(title, badge);
+				summary.addEventListener('click', (event) => {
+					if (index !== activeUnit) {
+						event.preventDefault();
+						selectUnit(index);
+					}
+				});
+				const body = document.createElement('div');
+				body.className = 'unit-body';
+				const info = document.createElement('span');
+				info.textContent = unit.result
+					? `${unit.result.liters.toFixed(1)} L estimados · ${unit.result.distanceKm.toFixed(1)} km. ${unit.result.note}`
+					: 'Aún sin calcular. Captura sus datos y calcula el recorrido.';
+				body.append(info);
+				if (unit.result) {
+					const maps = document.createElement('a');
+					maps.className = 'text-button';
+					maps.href = unit.result.maps;
+					maps.target = '_blank';
+					maps.rel = 'noopener';
+					maps.textContent = 'Ver en Google Maps';
+					body.append(maps);
+				}
+				const remove = document.createElement('button');
+				remove.type = 'button';
+				remove.className = 'text-button';
+				remove.textContent = 'Quitar unidad';
+				remove.addEventListener('click', () => removeUnit(index));
+				body.append(remove);
+				card.append(summary, body);
+				return card;
+			}));
+			renderWhatsappPanel();
+			try { localStorage.setItem(STORAGE_KEY, JSON.stringify(units)); } catch { }
+		}
+
+		function unitHasDestinations(unit) {
+			return unit.stops.some((stop) => stop.coords.trim());
+		}
+
+		function renderWhatsappPanel() {
+			const ready = units.map((unit, index) => ({ unit, index })).filter(({ unit }) => unitHasDestinations(unit));
+			const panel = $('#waPanel');
+			panel.hidden = !ready.length;
+			if (!ready.length) return;
+			$('#waList').replaceChildren(...ready.map(({ unit, index }) => {
+				const row = document.createElement('div');
+				row.className = 'wa-row';
+				const label = document.createElement('span');
+				const places = unit.stops.filter((stop) => stop.coords.trim()).map((stop) => stop.name || 'Destino').join(', ');
+				label.innerHTML = '<strong></strong><small></small>';
+				label.querySelector('strong').textContent = `${unit.economic || `Unidad ${index + 1}`} · ${unit.operator || 'sin operador'}`;
+				label.querySelector('small').textContent = places;
+				row.append(label);
+				const phone = unit.phone.replace(/\D/g, '');
+				if (!unit.result) {
+					const note = document.createElement('em');
+					note.textContent = 'Falta calcular';
+					row.append(note);
+				} else if (phone.length < 10) {
+					const note = document.createElement('em');
+					note.textContent = 'Falta celular';
+					row.append(note);
+				} else {
+					const link = document.createElement('a');
+					link.className = 'whatsapp-button';
+					link.href = unit.result.whatsapp;
+					link.target = '_blank';
+					link.rel = 'noopener';
+					link.textContent = 'Enviar WhatsApp';
+					row.append(link);
+				}
+				return row;
+			}));
 		}
 
 		$('#addStop').addEventListener('click', () => addStop());
@@ -701,19 +914,26 @@
 		$('#economic').addEventListener('input', () => setTimeout(() => { updateFuelLiters(); updateMap(); }));
 		stopsContainer.addEventListener('input', updateMap);
 		$('#baseName').addEventListener('input', updateMap);
-		form.addEventListener('submit', async (event) => {
-			event.preventDefault();
+		$('#addUnit').addEventListener('click', addUnit);
+		const syncActiveUnit = () => {
+			snapshotUnit();
+			if (units[activeUnit]) units[activeUnit].result = null;
+			renderUnits();
+		};
+		form.addEventListener('input', syncActiveUnit);
+		form.addEventListener('change', syncActiveUnit);
+		async function calculateActive() {
 			formError.style.display = 'none';
-			if (!form.reportValidity()) return;
+			if (!form.reportValidity()) return false;
 			if (parseTankCapacity($('#tankCapacity').value) === null) {
 				showError('Indica la capacidad de los tanques; por ejemplo, 150 C/U o 220L.');
 				$('#tankCapacity').focus();
-				return;
+				return false;
 			}
 			const efficiency = Number($('#efficiency').value);
 			if (!Number.isFinite(efficiency) || efficiency <= 0) {
 				showError('Indica el rendimiento en vacío de la unidad en km por litro.');
-				return;
+				return false;
 			}
 
 			calculateButton.disabled = true;
@@ -738,19 +958,49 @@
 				renderResult(points, route, legFuel, distanceKm, baseLiters, totalLiters);
 				$('#statusText').textContent = 'Recorrido calculado';
 				$('#statusDot').style.background = '#218b58';
+				return true;
 			} catch (error) {
 				showError(error.message || 'Ocurrió un error al calcular el recorrido.');
 				$('#statusText').textContent = 'No se pudo calcular';
 				$('#statusDot').style.background = '#c64d33';
+				return false;
 			} finally {
 				calculateButton.disabled = false;
 				calculateButton.textContent = 'Calcular recorrido y combustible';
 			}
+		}
+
+		form.addEventListener('submit', (event) => {
+			event.preventDefault();
+			calculateActive();
 		});
 
+		$('#calculateAll').addEventListener('click', async () => {
+			const original = activeUnit;
+			const button = $('#calculateAll');
+			button.disabled = true;
+			let failed = 0;
+			for (let index = 0; index < units.length; index++) {
+				if (!unitHasDestinations(units[index])) continue;
+				selectUnit(index);
+				button.textContent = `Calculando unidad ${index + 1} de ${units.length}...`;
+				if (!(await calculateActive())) failed += 1;
+			}
+			selectUnit(original);
+			button.disabled = false;
+			button.textContent = 'Calcular rutas y preparar WhatsApp';
+			if (failed) showError(`${failed} unidad${failed === 1 ? '' : 'es'} no se pudo calcular; revisa sus datos.`);
+		});
+
+		const savedUnits = (() => {
+			try { return JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch { return null; }
+		})();
 		setToday();
 		loadVehicles();
-		addStop();
+		if (Array.isArray(savedUnits) && savedUnits.length) units.push(...savedUnits.map((unit) => ({ ...blankUnit(), ...unit })));
+		else units.push(blankUnit());
+		loadUnit(units[0]);
+		renderUnits();
 		initializeMap();
 	</script>
 </body>
