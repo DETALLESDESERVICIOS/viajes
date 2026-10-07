@@ -179,12 +179,11 @@
 				<section>
 					<div class="section-head"><span class="step">★</span><div><h2>Unidades del día</h2><p class="section-note">Cada unidad tiene su operador, celular, combustible y ruta. Despliega una para ver su resultado.</p></div></div>
 					<div class="unit-list" id="unitList"></div>
-					<div class="inline-actions"><button class="text-button" id="addUnit" type="button">+ Agregar unidad</button></div>
+					<div class="inline-actions"><button class="text-button" id="addUnit" type="button">+ Agregar unidad</button><button class="text-button" id="calculateAll" type="button">Calcular todas las unidades</button></div>
 					<div class="wa-panel" id="waPanel" hidden>
-						<h3>Mensajes por WhatsApp</h3>
-						<p class="section-note">Aparecen las unidades que ya tienen destinos seleccionados. Calcula las rutas y envía a cada operador.</p>
+						<h3>Lista de envío por WhatsApp</h3>
+						<p class="section-note">Solo aparecen las unidades que calculaste y guardaste en la lista de envío.</p>
 						<div id="waList"></div>
-						<button class="text-button" id="calculateAll" type="button">Calcular rutas y preparar WhatsApp</button>
 					</div>
 				</section>
 
@@ -210,7 +209,8 @@
 					<div class="section-head"><span class="step">2</span><div><h2>Base de salida</h2><p class="section-note">Usa latitud y longitud decimal de Google Maps</p></div></div>
 					<div class="fields">
 						<div class="field full"><label for="baseName">Nombre de la base</label><input id="baseName" type="text" value="Centro de Apan, Hidalgo (referencia)"></div>
-						<div class="field full"><label for="baseCoordinates">Coordenadas fijas de la base</label><input id="baseCoordinates" type="text" value="19.7099, -98.4526" readonly required></div>
+						<div class="field full" id="baseCoordField"><label for="baseCoordinates">Coordenadas de la base <span class="hint">latitud, longitud</span></label><input id="baseCoordinates" type="text" value="19.7099, -98.4526" required></div>
+						<div class="field full inline-actions" style="margin:0"><button class="text-button" id="pickBase" type="button">⌖ Elegir base en el mapa</button><button class="text-button" id="resetBase" type="button">Restaurar base original (Apan)</button></div>
 					</div>
 				</section>
 
@@ -545,13 +545,14 @@
 			routeMap.on('click', ({ latlng }) => {
 				if (!mapPickTarget) return;
 				const { row, input } = mapPickTarget;
-				const clientName = row.querySelector('.stop-name').value.trim() || 'cliente';
+				const clientName = row.querySelector('.stop-name')?.value.trim() || 'cliente';
 				input.value = `${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`;
 				row.classList.remove('map-pick-active');
 				mapPickTarget = null;
 				routeMap.getContainer().classList.remove('map-picking');
 				input.dispatchEvent(new Event('input', { bubbles: true }));
-				$('#mapStatus').textContent = `Ubicación guardada para ${clientName}.`;
+				if (row.id === 'baseCoordField') input.dispatchEvent(new Event('change'));
+				$('#mapStatus').textContent = row.id === 'baseCoordField' ? 'Base actualizada.' : `Ubicación guardada para ${clientName}.`;
 			});
 			L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 				attribution: '&copy; OpenStreetMap contributors',
@@ -740,7 +741,7 @@
 		let activeUnit = 0;
 
 		function blankUnit() {
-			return { economic: '', vehicleName: '', operator: '', phone: '', fuelPercent: '100', tankCapacity: '', efficiency: '', returnBase: true, stops: [{ name: '', coords: '' }], result: null };
+			return { economic: '', vehicleName: '', operator: '', phone: '', fuelPercent: '100', tankCapacity: '', efficiency: '', returnBase: true, stops: [{ name: '', coords: '' }], result: null, queued: false };
 		}
 
 		function snapshotUnit() {
@@ -823,7 +824,7 @@
 				title.append(sub);
 				const badge = document.createElement('span');
 				badge.className = `unit-badge${unit.result ? '' : ' is-pending'}`;
-				badge.textContent = index === activeUnit ? 'Editando' : unit.result ? `${unit.result.liters.toFixed(0)} L` : `${unit.fuelPercent || 0}%`;
+				badge.textContent = index === activeUnit ? 'Editando' : unit.result ? `${unit.queued ? '✉ ' : ''}${unit.result.liters.toFixed(0)} L` : `${unit.fuelPercent || 0}%`;
 				summary.append(title, badge);
 				summary.addEventListener('click', (event) => {
 					if (index !== activeUnit) {
@@ -839,6 +840,12 @@
 					: 'Aún sin calcular. Captura sus datos y calcula el recorrido.';
 				body.append(info);
 				if (unit.result) {
+					const queue = document.createElement('button');
+					queue.type = 'button';
+					queue.className = 'text-button';
+					queue.textContent = unit.queued ? '✔ En la lista de envío (quitar)' : '+ Guardar en lista de envío por WhatsApp';
+					queue.addEventListener('click', () => { unit.queued = !unit.queued; renderUnits(); });
+					body.append(queue);
 					const maps = document.createElement('a');
 					maps.className = 'text-button';
 					maps.href = unit.result.maps;
@@ -865,9 +872,11 @@
 		}
 
 		function renderWhatsappPanel() {
-			const ready = units.map((unit, index) => ({ unit, index })).filter(({ unit }) => unitHasDestinations(unit));
+			const ready = units.map((unit, index) => ({ unit, index })).filter(({ unit }) => unit.queued && unit.result);
 			const panel = $('#waPanel');
 			panel.hidden = !ready.length;
+			const activeQueued = Boolean(units[activeUnit]?.queued && units[activeUnit]?.result);
+			$('#whatsappLink').style.display = activeQueued ? '' : 'none';
 			if (!ready.length) return;
 			$('#waList').replaceChildren(...ready.map(({ unit, index }) => {
 				const row = document.createElement('div');
@@ -879,11 +888,7 @@
 				label.querySelector('small').textContent = places;
 				row.append(label);
 				const phone = unit.phone.replace(/\D/g, '');
-				if (!unit.result) {
-					const note = document.createElement('em');
-					note.textContent = 'Falta calcular';
-					row.append(note);
-				} else if (phone.length < 10) {
+				if (phone.length < 10) {
 					const note = document.createElement('em');
 					note.textContent = 'Falta celular';
 					row.append(note);
@@ -896,6 +901,12 @@
 					link.textContent = 'Enviar WhatsApp';
 					row.append(link);
 				}
+				const unqueue = document.createElement('button');
+				unqueue.type = 'button';
+				unqueue.className = 'text-button';
+				unqueue.textContent = 'Quitar';
+				unqueue.addEventListener('click', () => { unit.queued = false; renderUnits(); });
+				row.append(unqueue);
 				return row;
 			}));
 		}
@@ -914,10 +925,39 @@
 		$('#economic').addEventListener('input', () => setTimeout(() => { updateFuelLiters(); updateMap(); }));
 		stopsContainer.addEventListener('input', updateMap);
 		$('#baseName').addEventListener('input', updateMap);
+		const BASE_KEY = 'viajes.base.v1';
+		const DEFAULT_BASE = { name: 'Centro de Apan, Hidalgo (referencia)', coords: '19.7099, -98.4526' };
+		function applyBase(base) {
+			$('#baseName').value = base.name;
+			$('#baseCoordinates').value = base.coords;
+		}
+		function baseChanged() {
+			// los resultados ya calculados dependen de la base, así que se invalidan
+			for (const unit of units) { unit.result = null; unit.queued = false; }
+			try { localStorage.setItem(BASE_KEY, JSON.stringify({ name: $('#baseName').value, coords: $('#baseCoordinates').value })); } catch { }
+			$('#emptyState').style.display = '';
+			$('#summary').style.display = '';
+			updateMap();
+		}
+		try { const savedBase = JSON.parse(localStorage.getItem(BASE_KEY)); if (savedBase?.coords) applyBase(savedBase); } catch { }
+		$('#baseName').addEventListener('change', baseChanged);
+		$('#baseCoordinates').addEventListener('change', () => {
+			try { parseCoordinates($('#baseCoordinates').value, 'la base'); } catch (error) { showError(error.message); return; }
+			formError.style.display = 'none';
+			baseChanged();
+		});
+		$('#pickBase').addEventListener('click', () => {
+			if (!routeMap) return;
+			mapPickTarget?.row.classList.remove('map-pick-active');
+			mapPickTarget = { row: $('#baseCoordField'), input: $('#baseCoordinates') };
+			routeMap.getContainer().classList.add('map-picking');
+			$('#mapStatus').textContent = 'Haz clic en el mapa para ubicar la base.';
+		});
+		$('#resetBase').addEventListener('click', () => { applyBase(DEFAULT_BASE); baseChanged(); });
 		$('#addUnit').addEventListener('click', addUnit);
 		const syncActiveUnit = () => {
 			snapshotUnit();
-			if (units[activeUnit]) units[activeUnit].result = null;
+			if (units[activeUnit]) { units[activeUnit].result = null; units[activeUnit].queued = false; }
 			renderUnits();
 		};
 		form.addEventListener('input', syncActiveUnit);
@@ -988,7 +1028,7 @@
 			}
 			selectUnit(original);
 			button.disabled = false;
-			button.textContent = 'Calcular rutas y preparar WhatsApp';
+			button.textContent = 'Calcular todas las unidades';
 			if (failed) showError(`${failed} unidad${failed === 1 ? '' : 'es'} no se pudo calcular; revisa sus datos.`);
 		});
 
