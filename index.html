@@ -116,12 +116,6 @@
 		.disclaimer { color: var(--muted); font-size: 10px; line-height: 1.45; margin: 12px 0 0; }
 		.footer-note { display: flex; gap: 8px; align-items: start; color: var(--muted); font-size: 11px; line-height: 1.5; margin: 18px 2px; }
 		.footer-note strong { color: var(--ink); }
-		.ocr-results { display: grid; gap: 8px; margin-top: 14px; }
-		.ocr-row { display: grid; grid-template-columns: 20px minmax(0, 1.3fr) minmax(0, 1fr); gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line); }
-		.ocr-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--green); }
-		.ocr-row input[type="text"] { min-height: 34px; padding: 6px 8px; font-size: 12px; }
-		.ocr-header-row { display: grid; grid-template-columns: 20px minmax(0, 1.3fr) minmax(0, 1fr); gap: 8px; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); font-weight: 800; padding-bottom: 4px; border-bottom: 2px solid var(--line); }
-		.ocr-add-button { margin-top: 10px; }
 		@media (max-width: 800px) {
 			main { margin-top: 24px; }
 			.workspace { grid-template-columns: 1fr; }
@@ -173,6 +167,8 @@
 						<div class="field full"><label for="operator">ASIGNADO A</label><input id="operator" type="text" placeholder="Captura el operador"></div>
 						<div class="field"><label for="phone">Celular WhatsApp <span class="hint">opcional, con clave de país</span></label><input id="phone" type="tel" inputmode="tel" placeholder="Ej. 525512345678"></div>
 						<div class="field"><label for="date">Fecha de servicio</label><input id="date" type="date"></div>
+						<div class="field"><label for="fuelPercent">COMBUSTIBLE ACTUAL <span class="hint">% de los tanques</span></label><input id="fuelPercent" type="number" min="0" max="100" step="any" value="100" required></div>
+						<div class="field"><label>LITROS DISPONIBLES</label><input id="fuelLiters" type="text" value="—" readonly></div>
 						<div class="field full"><label for="tankCapacity">TANQUES DE COMBUSTIBLE <span class="hint">obligatorio; capacidad por tanque; C/U indica dos</span></label><input id="tankCapacity" type="text" placeholder="Ej. 150 C/U o 220L" required></div>
 					</div>
 				</section>
@@ -204,17 +200,6 @@
 					</div>
 				</section>
 
-				<hr class="divider">
-
-				<section>
-					<div class="section-head"><span class="step">5</span><div><h2>Importar entregas desde una foto (opcional)</h2><p class="section-note">Sube la captura de tu hoja de logística; se leen las columnas DESTINO y UNIDAD con OCR</p></div></div>
-					<div class="fields">
-						<div class="field full"><label for="ocrImageInput">Imagen de la hoja <span class="hint">foto o captura legible, JPG/PNG</span></label><input id="ocrImageInput" type="file" accept="image/*"></div>
-					</div>
-					<div class="inline-actions"><button class="text-button" id="ocrProcessButton" type="button">Leer imagen (OCR)</button><button class="text-button" id="ocrClearButton" type="button">Borrar todo</button><span class="section-note" id="ocrStatus"></span></div>
-					<div class="ocr-results" id="ocrResults"></div>
-				</section>
-
 				<div class="form-error" id="formError" role="alert"></div>
 				<button class="primary-button" id="calculateButton" type="submit">Calcular recorrido y combustible</button>
 			</form>
@@ -223,6 +208,7 @@
 				<div class="result-top"><h2>Resumen del recorrido</h2><span class="result-tag">Estimado</span></div>
 				<div class="map-heading"><h2>Mapa del recorrido</h2><span id="mapStatus">Ingresa coordenadas para ver los puntos</span></div>
 				<div id="routeMap" role="img" aria-label="Mapa con la base y los destinos del recorrido"></div>
+				<p class="disclaimer" id="reachInfo" style="margin:-8px 0 16px"></p>
 				<div class="empty-state" id="emptyState"><span class="empty-symbol">↗</span><strong>Listo para calcular</strong><p>Completa las coordenadas y el orden de las entregas para obtener la distancia por carretera.</p></div>
 				<div class="summary" id="summary">
 					<div class="fuel-highlight"><span>Combustible estimado del recorrido</span><strong id="fuelTotal">-- <small>L</small></strong></div>
@@ -254,7 +240,6 @@
 	</template>
 
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-	<script src="https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"></script>
 	<script>
 		const $ = (selector) => document.querySelector(selector);
 		const stopsContainer = $('#stops');
@@ -545,6 +530,19 @@
 			updateMap();
 		}
 
+		function reachRadiusKm() {
+			const capacity = parseTankCapacity($('#tankCapacity').value);
+			const efficiency = Number($('#efficiency').value);
+			if (capacity === null || !(efficiency > 0)) return null;
+			const percent = Math.min(Math.max(Number($('#fuelPercent').value) || 0, 0), 100);
+			const liters = capacity * percent / 100;
+			const rangeKm = liters * efficiency / 1.3;
+			const roundTrip = $('#returnBase').checked;
+			// 0.8 aproxima que la carretera es más larga que la línea recta
+			const radiusKm = rangeKm * 0.8 / (roundTrip ? 2 : 1);
+			return { liters, percent, rangeKm, radiusKm, roundTrip };
+		}
+
 		function updateMap() {
 			if (!routeMap) return;
 			mapMarkers.clearLayers();
@@ -573,7 +571,21 @@
 				}).bindTooltip(`${index === 0 ? 'Base' : `Destino ${index}`}: ${point.name}`).addTo(mapMarkers);
 			}
 			$('#mapStatus').textContent = points.length ? `${points.length} punto${points.length === 1 ? '' : 's'} en el mapa` : 'Ingresa coordenadas para ver los puntos';
-			if (points.length > 1) {
+			const reach = reachRadiusKm();
+			const reachInfo = $('#reachInfo');
+			let reachBounds;
+			if (reach && points.length) {
+				const circle = L.circle([points[0].lat, points[0].lon], {
+					radius: reach.radiusKm * 1000, color: '#d05c32', weight: 2, fillColor: '#d05c32', fillOpacity: .08, dashArray: '6 6'
+				}).bindTooltip(`Alcance aprox. ${reach.radiusKm.toFixed(0)} km`).addTo(mapMarkers);
+				reachBounds = circle.getBounds();
+				reachInfo.textContent = `Con ${reach.liters.toFixed(1)} L (${reach.percent.toFixed(0)}%) la unidad recorre unos ${reach.rangeKm.toFixed(0)} km cargada. El círculo naranja muestra hasta dónde llega desde la base (~${reach.radiusKm.toFixed(0)} km en línea recta${reach.roundTrip ? ', con regreso' : ''}). Es aproximado; calcula el recorrido para el dato por carretera.`;
+			} else {
+				reachInfo.textContent = '';
+			}
+			if (reachBounds) {
+				routeMap.fitBounds(reachBounds.extend(points.map(({ lat, lon }) => [lat, lon])), { padding: [24, 24] });
+			} else if (points.length > 1) {
 				routeMap.fitBounds(points.map(({ lat, lon }) => [lat, lon]), { padding: [24, 24], maxZoom: 12 });
 			} else if (points.length === 1) {
 				routeMap.setView([points[0].lat, points[0].lon], 10);
@@ -615,23 +627,35 @@
 			$('#fuelBase').textContent = `${baseLiters.toFixed(1)} L`;
 			const tankValue = $('#tankCapacity').value.trim();
 			const tankCapacity = parseTankCapacity(tankValue);
-			const refuelNeeded = tankCapacity === null ? 0 : Math.max(totalLiters - tankCapacity, 0);
+			const percent = Math.min(Math.max(Number($('#fuelPercent').value) || 0, 0), 100);
+			const available = tankCapacity === null ? null : tankCapacity * percent / 100;
+			const refuelNeeded = available === null ? 0 : Math.max(totalLiters - available, 0);
 			const recommendation = $('#fuelRecommendation');
+			let cumulative = 0;
+			let lastReachable = -1;
+			legFuel.forEach((leg, index) => {
+				cumulative += leg.liters;
+				leg.reachable = available !== null && cumulative <= available;
+				if (leg.reachable) lastReachable = index;
+			});
+			const reachableText = lastReachable < 0
+				? 'no alcanza ni el primer destino'
+				: `alcanza hasta ${points[lastReachable + 1].name}`;
 			if (tankCapacity === null) {
 				recommendation.className = 'fuel-recommendation';
 				recommendation.textContent = 'Captura la capacidad total de los tanques para verificar si requiere una recarga durante el recorrido.';
-			} else if (totalLiters > tankCapacity) {
+			} else if (totalLiters > available) {
 				recommendation.className = 'fuel-recommendation is-warning';
-				recommendation.textContent = `ALERTA: el recorrido estima ${totalLiters.toFixed(1)} L y la capacidad total es ${tankCapacity.toFixed(1)} L (${tankValue}). Como la unidad sale con los tanques llenos, carga al menos ${refuelNeeded.toFixed(1)} L adicionales con tarjeta o saldo normal durante el recorrido para llegar a tu destino sin contratiempos.`;
+				recommendation.textContent = `ALERTA: la unidad tiene ${percent.toFixed(0)}% (${available.toFixed(1)} L) y el recorrido estima ${totalLiters.toFixed(1)} L; con ese nivel ${reachableText}. Carga al menos ${refuelNeeded.toFixed(1)} L adicionales para completar la ruta.`;
 			} else {
 				recommendation.className = 'fuel-recommendation';
-				recommendation.textContent = `Con los tanques llenos (${tankCapacity.toFixed(1)} L), la unidad puede cubrir el consumo estimado de ${totalLiters.toFixed(1)} L sin recarga adicional durante el recorrido.`;
+				recommendation.textContent = `Con ${percent.toFixed(0)}% de combustible (${available.toFixed(1)} L), la unidad puede cubrir el consumo estimado de ${totalLiters.toFixed(1)} L sin recarga adicional.`;
 			}
 			$('#legsList').replaceChildren(...route.legs.map((leg, index) => {
 				const row = document.createElement('div');
 				row.className = 'leg';
 				const label = document.createElement('span');
-				label.textContent = `${points[index].name} → ${points[index + 1].name} (${legFuel[index].mode})`;
+				label.textContent = `${legFuel[index].reachable ? '✔' : '✖'} ${points[index].name} → ${points[index + 1].name} (${legFuel[index].mode})`;
 				const distance = document.createElement('strong');
 				distance.textContent = `${legFuel[index].distanceKm.toFixed(1)} km | ${legFuel[index].liters.toFixed(1)} L`;
 				row.append(label, distance);
@@ -645,9 +669,9 @@
 			const customerList = points.slice(1, $('#returnBase').checked ? -1 : undefined).map((point) => point.name).join(', ');
 			const greeting = operator ? `Hola, ${operator}.` : 'Hola.';
 			const vehicleDescription = vehicleName ? ` (${vehicleName})` : '';
-			const fuelInstruction = tankCapacity !== null && totalLiters > tankCapacity
-				? ` Como la unidad sale con tanque lleno, carga al menos ${refuelNeeded.toFixed(1)} L adicionales con tarjeta o saldo normal durante el recorrido.`
-				: ' La unidad sale con los tanques llenos y no requiere recarga adicional en ruta.';
+			const fuelInstruction = available !== null && totalLiters > available
+				? ` La unidad tiene ${percent.toFixed(0)}% de combustible; carga al menos ${refuelNeeded.toFixed(1)} L adicionales con tarjeta o saldo normal durante el recorrido.`
+				: ` La unidad sale con ${percent.toFixed(0)}% de combustible y no requiere recarga adicional en ruta.`;
 			const message = `${greeting} Para hoy, ${date}, la unidad ${economic}${vehicleDescription} tiene asignada la ruta: ${customerList}. El consumo estimado es de ${totalLiters.toFixed(1)} litros.${fuelInstruction} Por favor, confirma cuando hayas cargado.`;
 			$('#messagePreview').textContent = message;
 			const phone = $('#phone').value.replace(/\D/g, '');
@@ -663,163 +687,18 @@
 			$('#mapsLink').href = mapsUrl.toString();
 		}
 
-		function stripAccents(value) {
-			return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-		}
-
-		function findHeaderWord(words, pattern) {
-			return words.find((word) => pattern.test(stripAccents(word.text).toUpperCase()));
-		}
-
-		function wordCenterX(word) {
-			return (word.bbox.x0 + word.bbox.x1) / 2;
-		}
-
-		function extractOcrRows(lines) {
-			let headerLine = null;
-			let headerWords = [];
-			for (const line of lines) {
-				const words = line.words || [];
-				const texts = words.map((word) => stripAccents(word.text).toUpperCase());
-				if (texts.some((text) => text.includes('DESTINO')) && texts.some((text) => text.includes('UNIDAD'))) {
-					headerLine = line;
-					headerWords = words;
-					break;
-				}
-			}
-			if (!headerLine) return [];
-			const ordenWord = findHeaderWord(headerWords, /^ORDEN$/);
-			const destinoWord = findHeaderWord(headerWords, /DESTINO/);
-			const almacenWord = findHeaderWord(headerWords, /^ALMAC/);
-			const cantidadWord = findHeaderWord(headerWords, /^CANTIDAD$/);
-			const unidadWord = findHeaderWord(headerWords, /UNIDAD/);
-			const quienWord = findHeaderWord(headerWords, /^QUIEN$/);
-			if (!destinoWord || !unidadWord) return [];
-
-			const destinoLeft = ordenWord ? (ordenWord.bbox.x0 + destinoWord.bbox.x0) / 2 : destinoWord.bbox.x0 - 40;
-			const destinoRight = almacenWord ? (destinoWord.bbox.x0 + almacenWord.bbox.x0) / 2 : destinoWord.bbox.x1 + 150;
-			const unidadLeft = cantidadWord ? (cantidadWord.bbox.x0 + unidadWord.bbox.x0) / 2 : unidadWord.bbox.x0 - 40;
-			const unidadRight = quienWord ? (unidadWord.bbox.x0 + quienWord.bbox.x0) / 2 : unidadWord.bbox.x1 + 150;
-			const isHeaderText = (text) => /^(ORDEN|DESTINO|ALMACEN|CANTIDAD|UNIDAD|CARGA|DE)$/.test(stripAccents(text).toUpperCase());
-
-			const bodyLines = lines
-				.filter((line) => line !== headerLine && line.bbox.y0 > headerLine.bbox.y1)
-				.sort((a, b) => a.bbox.y0 - b.bbox.y0);
-
-			// la celda de DESTINO suele abarcar varias líneas de OCR cuando trae más de una UNIDAD
-			const rows = [];
-			let currentRow = null;
-			for (const line of bodyLines) {
-				const words = line.words || [];
-				const destino = words
-					.filter((word) => wordCenterX(word) >= destinoLeft && wordCenterX(word) < destinoRight)
-					.sort((a, b) => a.bbox.x0 - b.bbox.x0)
-					.map((word) => word.text).join(' ').trim();
-				const unidad = words
-					.filter((word) => wordCenterX(word) >= unidadLeft && wordCenterX(word) < unidadRight)
-					.sort((a, b) => a.bbox.x0 - b.bbox.x0)
-					.map((word) => word.text).join(' ').trim();
-				const validDestino = destino.length >= 3 && !isHeaderText(destino);
-				if (validDestino) {
-					currentRow = { destino, unidadParts: unidad ? [unidad] : [] };
-					rows.push(currentRow);
-				} else if (unidad && currentRow) {
-					currentRow.unidadParts.push(unidad);
-				}
-			}
-			return rows.map((row) => ({ destino: row.destino, unidad: row.unidadParts.join(' / ') }));
-		}
-
-		function renderOcrResults(rows) {
-			const container = $('#ocrResults');
-			const headerRow = document.createElement('div');
-			headerRow.className = 'ocr-header-row';
-			const headerCheck = document.createElement('span');
-			const headerDestino = document.createElement('span');
-			headerDestino.textContent = 'Destino (a dónde va)';
-			const headerUnidad = document.createElement('span');
-			headerUnidad.textContent = 'Unidad (económico)';
-			headerRow.append(headerCheck, headerDestino, headerUnidad);
-			const rowElements = rows.map((row) => {
-				const wrapper = document.createElement('div');
-				wrapper.className = 'ocr-row';
-				const checkbox = document.createElement('input');
-				checkbox.type = 'checkbox';
-				checkbox.checked = true;
-				const destinoInput = document.createElement('input');
-				destinoInput.type = 'text';
-				destinoInput.className = 'ocr-destino';
-				destinoInput.value = row.destino;
-				const unidadInput = document.createElement('input');
-				unidadInput.type = 'text';
-				unidadInput.className = 'ocr-unidad';
-				unidadInput.placeholder = 'Unidad (opcional)';
-				unidadInput.value = row.unidad;
-				wrapper.append(checkbox, destinoInput, unidadInput);
-				return wrapper;
-			});
-			const addButton = document.createElement('button');
-			addButton.type = 'button';
-			addButton.className = 'text-button ocr-add-button';
-			addButton.textContent = '+ Agregar seleccionados a la ruta';
-			addButton.addEventListener('click', () => {
-				let added = 0;
-				container.querySelectorAll('.ocr-row').forEach((rowEl) => {
-					const checkbox = rowEl.querySelector('input[type="checkbox"]');
-					if (!checkbox.checked) return;
-					const destino = rowEl.querySelector('.ocr-destino').value.trim();
-					const unidad = rowEl.querySelector('.ocr-unidad').value.trim();
-					if (!destino) return;
-					addStop(unidad ? `${destino} (${unidad})` : destino);
-					added += 1;
-				});
-				$('#ocrStatus').textContent = added ? `${added} cliente${added === 1 ? '' : 's'} agregado${added === 1 ? '' : 's'} al recorrido.` : 'Selecciona al menos una fila para agregar.';
-				updateMap();
-			});
-			container.replaceChildren(headerRow, ...rowElements, addButton);
-		}
-
-		function clearOcrResults() {
-			$('#ocrImageInput').value = '';
-			$('#ocrResults').replaceChildren();
-			$('#ocrStatus').textContent = '';
-		}
-
-		async function processOcrImage() {
-			const status = $('#ocrStatus');
-			const button = $('#ocrProcessButton');
-			const file = $('#ocrImageInput').files?.[0];
-			if (!file) {
-				status.textContent = 'Selecciona primero una imagen.';
-				return;
-			}
-			if (!window.Tesseract) {
-				status.textContent = 'No se pudo cargar el motor de OCR. Revisa tu conexión.';
-				return;
-			}
-			button.disabled = true;
-			status.textContent = 'Leyendo imagen, esto puede tardar unos segundos...';
-			$('#ocrResults').replaceChildren();
-			try {
-				const { data } = await Tesseract.recognize(file, 'spa');
-				const rows = extractOcrRows(data.lines || []);
-				if (!rows.length) {
-					status.textContent = 'No se detectaron las columnas DESTINO y UNIDAD. Prueba con una imagen más clara o recorta solo la tabla.';
-					return;
-				}
-				renderOcrResults(rows);
-				status.textContent = `${rows.length} fila${rows.length === 1 ? '' : 's'} detectada${rows.length === 1 ? '' : 's'}. Revisa y ajusta antes de agregar.`;
-			} catch (error) {
-				status.textContent = 'No se pudo leer la imagen. Intenta con otra foto más clara.';
-			} finally {
-				button.disabled = false;
-			}
-		}
-
 		$('#addStop').addEventListener('click', () => addStop());
 		$('#economic').addEventListener('input', selectVehicle);
-		$('#ocrProcessButton').addEventListener('click', processOcrImage);
-		$('#ocrClearButton').addEventListener('click', clearOcrResults);
+		function updateFuelLiters() {
+			const capacity = parseTankCapacity($('#tankCapacity').value);
+			const percent = Math.min(Math.max(Number($('#fuelPercent').value) || 0, 0), 100);
+			$('#fuelLiters').value = capacity === null ? '—' : `${(capacity * percent / 100).toFixed(1)} L`;
+		}
+		for (const id of ['#fuelPercent', '#tankCapacity', '#efficiency', '#returnBase']) {
+			$(id).addEventListener('input', () => { updateFuelLiters(); updateMap(); });
+			$(id).addEventListener('change', () => { updateFuelLiters(); updateMap(); });
+		}
+		$('#economic').addEventListener('input', () => setTimeout(() => { updateFuelLiters(); updateMap(); }));
 		stopsContainer.addEventListener('input', updateMap);
 		$('#baseName').addEventListener('input', updateMap);
 		form.addEventListener('submit', async (event) => {
